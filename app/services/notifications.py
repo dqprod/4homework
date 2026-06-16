@@ -83,13 +83,14 @@ async def _build_digest(target_id: str) -> tuple[Optional[str], str, str, int]:
         if not rows:
             return None, "", "", 0
 
-        # Hydrate problem + subject names
-        items = []
+        # Hydrate problem + subject names (with null guards for orphaned references)
+        items: list[tuple] = []
         for r in rows:
             p = await session.get(Problem, r.problem_id)
-            if not p:
-                continue
             s = await session.get(Subject, p.subject_id) if p else None
+            if not p or not s:
+                # Skip if review references a deleted/nonexistent problem
+                continue
             items.append((r, p, s))
 
         subject = f"📚 {profile.full_name or '学習者'}さん、復習が {len(items)} 件あります"
