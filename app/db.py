@@ -1,40 +1,17 @@
-"""Async DB session factory + table init + subject seeding.
-
-Supports both SQLite (pytest / dev) and Supabase PostgreSQL (production).
-"""
+"""Async DB session factory + table init + subject seeding."""
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Optional
 
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.models import SEED_SUBJECTS, Base, Subject
+from app.models import SEED_SUBJECTS, Base, Profile, Subject
 
 
 def _build_engine():
-    """Return an async engine for the configured backend.
-
-    SQLite (default, pytest/Phase 1):
-      sqlite+aiosqlite:///./homework.db
-    PostgreSQL (Supabase):
-      The DATABASE_URL should be the Supabase PG connection string with async
-      driver, e.g. postgresql+asyncpg://<user>:<pass>@<host>:<port>/<db>.
-      If DATABASE_URL isn't set for supabase, build it from SUPABASE_URL env.
-    """
-    url = settings.database_url
-    if settings.database_backend == "supabase":
-        # Default: derive PG URL from SUPABASE_URL if DATABASE_URL not explicit.
-        if url == "sqlite+aiosqlite:///./homework.db":
-            raise ValueError(
-                "database_backend=supabase requires DATABASE_URL or SUPABASE_URL to be set"
-            )
+    url = settings.database_url or "sqlite+aiosqlite:///./homework.db"
     return create_async_engine(url, echo=False, future=True)
 
 
@@ -49,17 +26,25 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-async def init_db() -> None:
-    """Create all tables and seed the five subjects if absent.
+DEMO_PROFILES = [
+    ("test-user-0000-0000-0000-000000000001", "Taro (テスト)", "student", "taro_demo"),
+    ("d853df1d-dcb7-407c-a9f8-0538aa70ee42", "お父さん (テスト)", "parent", "parent_demo"),
+]
 
-    Safe to call repeatedly. Idempotent for both schema and seed.
-    """
+
+async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
     async with SessionLocal() as session:
-        existing = (await session.execute(select(Subject.name))).scalars().all()
-        existing_set = set(existing)
+        existing_subjects = set((await session.execute(select(Subject.name))).scalars().all())
         for name, icon in SEED_SUBJECTS:
-            if name not in existing_set:
+            if name not in existing_subjects:
                 session.add(Subject(name=name, icon=icon))
+        await session.commit()
+
+        existing_profile_ids = set((await session.execute(select(Profile.id))).scalars().all())
+        for pid, full_name, role, username in DEMO_PROFILES:
+            if pid not in existing_profile_ids:
+                session.add(Profile(id=pid, full_name=full_name, role=role, username=username))
         await session.commit()

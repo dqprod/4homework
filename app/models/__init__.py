@@ -47,12 +47,8 @@ class Profile(Base):
     __tablename__ = "profiles"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    username: Mapped[Optional[str]] = mapped_column(String(64))
     full_name: Mapped[Optional[str]] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(16))  # 'student' | 'parent'
-    child_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
-    )
     avatar_url: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, server_default=text("CURRENT_TIMESTAMP")

@@ -5,9 +5,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import parent, problems, profiles, reviews, subjects, upload
+from app.api import auth, parent, problems, profiles, reviews, subjects, upload
 from app.db import init_db
-
+from app.services.ai_client import get_client
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
@@ -24,12 +24,13 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
-
-app.include_router(subjects.router)
-app.include_router(upload.router)
-app.include_router(problems.router)
-app.include_router(reviews.router)
-app.include_router(parent.router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(profiles.router, prefix="/api")
+app.include_router(subjects.router, prefix="/api")
+app.include_router(upload.router, prefix="/api")
+app.include_router(problems.router, prefix="/api")
+app.include_router(reviews.router, prefix="/api")
+app.include_router(parent.router, prefix="/api")
 app.include_router(profiles.router)
 
 
