@@ -33,7 +33,8 @@ class UploadResponse(BaseModel):
     final_answer: Optional[str] = None
     estimated_study_time: Optional[int] = None
     memo: Optional[str] = None
-    review_schedule: "ReviewScheduleOut"
+    review_schedule: Optional["ReviewScheduleOut"] = None
+    processing: bool = True  # True until AI finishes
     created_at: datetime
 
 # Problem list

@@ -1,0 +1,2 @@
+2026-06-16 20:44:01,334 INFO [notify-skip] SMTP not configured, would email user-11111111@4homework.invalid: 📚 Taroさん、復習が 1 件あります
+2026-06-16 20:44:01,334 INFO [digest] target=11111111-1111-1111-1111-111111111111 due=1 smtp=logged-only

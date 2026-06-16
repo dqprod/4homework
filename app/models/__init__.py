@@ -84,6 +84,7 @@ class Problem(Base):
     estimated_study_time: Mapped[Optional[int]] = mapped_column(Integer)  # minutes
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # user annotation
     ai_response_raw: Mapped[Optional[dict]] = mapped_column(JSON)
+    processing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)  # async AI
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     subject: Mapped[Subject] = relationship(lazy="joined")

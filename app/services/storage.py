@@ -34,6 +34,38 @@ def _ext_for(content_type: str) -> str:
     }.get(content_type, ".bin")
 
 
+def _maybe_compress(content_type: str, data: bytes) -> tuple[str, bytes]:
+    """Re-encode oversized images with Pillow (best-effort, transparent on errors)."""
+    try:
+        if content_type not in {"image/jpeg", "image/png", "image/webp"}:
+            return content_type, data
+        # Skip anything under 400 KB or unlikely to benefit
+        if len(data) < 400 * 1024:
+            return content_type, data
+        from io import BytesIO
+        from PIL import Image
+
+        img = Image.open(BytesIO(data))
+        # Resize to longest edge 1600px max
+        MAX_EDGE = 1600
+        w, h = img.size
+        if max(w, h) > MAX_EDGE:
+            scale = MAX_EDGE / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        # Re-encode JPEG at q=82
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=82, optimize=True)
+        new_data = buf.getvalue()
+        if len(new_data) < len(data):
+            return "image/jpeg", new_data
+        return content_type, data
+    except Exception:
+        # compression is best-effort, never fail the upload
+        return content_type, data
+
+
 def save_image(*, user_id: str, content_type: str, data: bytes) -> str:
     """Persist `data`. Dispatches to local or Supabase Storage."""
     if content_type not in ALLOWED_CONTENT_TYPES:
@@ -41,9 +73,12 @@ def save_image(*, user_id: str, content_type: str, data: bytes) -> str:
     if len(data) > MAX_BYTES:
         raise StorageError(f"File too large: {len(data)} > {MAX_BYTES} bytes")
 
+    content_type, data = _maybe_compress(content_type, data)
+    ext = ".jpg" if content_type == "image/jpeg" else _ext_for(content_type)
+
     if settings.database_backend == "supabase":
-        return _save_supabase(user_id, content_type, data)
-    return _save_local(user_id, content_type, data)
+        return _save_supabase(user_id, content_type, data, ext)
+    return _save_local(user_id, content_type, data, ext)
 
 
 def delete_image(url: str) -> None:
@@ -56,10 +91,10 @@ def delete_image(url: str) -> None:
 
 # ---- Local filesystem backend ----
 
-def _save_local(user_id: str, content_type: str, data: bytes) -> str:
+def _save_local(user_id: str, content_type: str, data: bytes, ext: str) -> str:
     user_dir: Path = settings.local_storage_dir / user_id
     user_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}{_ext_for(content_type)}"
+    name = f"{uuid.uuid4().hex}{ext}"
     (user_dir / name).write_bytes(data)
     return f"local://{user_id}/{name}"
 
@@ -80,13 +115,13 @@ def _delete_local(url: str) -> None:
 SUPABASE_BUCKET: Final[str] = "problems"
 
 
-def _save_supabase(user_id: str, content_type: str, data: bytes) -> str:
+def _save_supabase(user_id: str, content_type: str, data: bytes, ext: str) -> str:
     from app.services.supabase_client import get_supabase
 
     sb = get_supabase()
     if sb is None:
         raise StorageError("Supabase client not configured")
-    path = f"{user_id}/{uuid.uuid4().hex}{_ext_for(content_type)}"
+    path = f"{user_id}/{uuid.uuid4().hex}{ext}"
     try:
         sb.storage.from_(SUPABASE_BUCKET).upload(
             path=path,
