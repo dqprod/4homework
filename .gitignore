@@ -1,17 +1,37 @@
+# Node
 node_modules/
-.env
+.next/
+frontend/node_modules/
+frontend/.next/
+dist/
+
+# Python (no longer needed - migrated to Edge Functions)
+app/
+*.py
+*.pyc
 __pycache__/
-*.py[cod]
-*.db
-*.db-journal
 .venv/
 venv/
-.next/
-frontend/
-dist/
-*.egg-info/
-.DS_Store
-.pytest_cache/
+requirements*.txt
+pytest.ini
+serve.sh
+serve_lan.sh
+seed_*.py
+migrate_to_supabase.py
+_load_env.py
+setup.sh
+tests/
 storage/
 storage_test/
+logs/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+*.db
+*.db-journal
 tmp/
