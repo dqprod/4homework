@@ -35,3 +35,19 @@ logs/
 *.db
 *.db-journal
 tmp/
+
+# Python (remnants)
+pytest.ini
+*.py
+__pycache__/
+app/
+requirements*.txt
+serve*.sh
+deploy_*.sh
+setup.sh
+*.db
+seed_*.sql
+supabase_migration.sql
+storage/
+storage_test/
+logs/
