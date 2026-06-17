@@ -1,2 +1,6 @@
 2026-06-16 20:44:01,334 INFO [notify-skip] SMTP not configured, would email user-11111111@4homework.invalid: 📚 Taroさん、復習が 1 件あります
 2026-06-16 20:44:01,334 INFO [digest] target=11111111-1111-1111-1111-111111111111 due=1 smtp=logged-only
+2026-06-17 20:07:56,672 WARNING [notify-fail] user-test-use@4homework.invalid: (550, b'The dqworld.uk domain is not verified. Please, add and verify your domain on https://resend.com/domains')
+2026-06-17 20:07:56,673 INFO [digest] target=test-user-0000-0000-0000-000000000001 due=6 smtp=logged-only
+2026-06-17 20:09:21,660 WARNING [notify-fail] team@dqworld.uk: (550, b'The dqworld.uk domain is not verified. Please, add and verify your domain on https://resend.com/domains')
+2026-06-17 20:09:21,661 INFO [digest] target=test-user-0000-0000-0000-000000000001 due=6 smtp=logged-only

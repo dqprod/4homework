@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-import smtplib
+import smtplib, ssl
 from datetime import date, datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -53,11 +53,18 @@ def _smtp_send(to_email: str, subject: str, body_html: str) -> bool:
     msg.attach(MIMEText(body_html, "html", "utf-8"))
 
     try:
-        with smtplib.SMTP(host, port, timeout=15) as s:
-            s.starttls()
-            if user and password:
-                s.login(user, password)
-            s.sendmail(sender, [to_email], msg.as_string())
+        if port == 465:
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, timeout=15, context=ctx) as s:
+                if user and password:
+                    s.login(user, password)
+                s.sendmail(sender, [to_email], msg.as_string())
+        else:
+            with smtplib.SMTP(host, port, timeout=15) as s:
+                s.starttls()
+                if user and password:
+                    s.login(user, password)
+                s.sendmail(sender, [to_email], msg.as_string())
         log.info(f"[notify-ok] sent {subject!r} to {to_email}")
         return True
     except Exception as exc:
@@ -65,7 +72,7 @@ def _smtp_send(to_email: str, subject: str, body_html: str) -> bool:
         return False
 
 
-async def _build_digest(target_id: str) -> tuple[Optional[str], str, str, int]:
+async def _build_digest(target_id: str, override_email: Optional[str] = None) -> tuple[Optional[str], str, str, int]:
     """Returns (recipient_email, subject, body_html, due_count)."""
     async with SessionLocal() as session:
         profile = await session.get(Profile, target_id)
@@ -121,20 +128,24 @@ async def _build_digest(target_id: str) -> tuple[Optional[str], str, str, int]:
             4homework アプリを開いて復習を記録しましょう。
           </p>
         </body></html>"""
-        # We don't actually have an email column in profiles (no field).
-        # In production wire this up via auth.users.email or add column.
-        recipient = f"user-{target_id[:8]}@4homework.invalid"
+        # Use override_email if provided, otherwise build placeholder
+        recipient = override_email or f"user-{target_id[:8]}@4homework.invalid"
         return recipient, subject, body, len(items)
 
 
 async def send_review_reminders(
     target_ids: list[str],
     parent_email: Optional[str] = None,
+    user_emails: Optional[dict[str, str]] = None,
 ) -> int:
-    """Builds and sends notifications. Returns number of users notified."""
+    """Builds and sends notifications. Returns number of users notified.
+    
+    user_emails: mapping of user_id -> email address. Overrides the placeholder.
+    """
     notified = 0
     for tid in target_ids:
-        recipient, subject, body, count = await _build_digest(tid)
+        override_email = (user_emails or {}).get(tid)
+        recipient, subject, body, count = await _build_digest(tid, override_email)
         if not recipient:
             continue
         sent = _smtp_send(recipient, subject, body)

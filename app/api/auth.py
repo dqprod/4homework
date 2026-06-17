@@ -77,11 +77,15 @@ async def register(
 
 
 @router.post("/auth/login", response_model=AuthLoginResponse)
-async def login(body: AuthRegisterRequest) -> AuthLoginResponse:
+async def login(
+    body: AuthRegisterRequest,
+    session: AsyncSession = Depends(get_session),
+) -> AuthLoginResponse:
     """Login with email/password via Supabase Auth, return access token.
 
     We call Supabase Auth's sign-in endpoint directly so we don't need
     service_role key (works with publishable key in this version).
+    Also ensures a profile row exists in the local database.
     """
     url = os.environ["SUPABASE_URL"]
     key = os.environ["SUPABASE_KEY"]
@@ -98,10 +102,25 @@ async def login(body: AuthRegisterRequest) -> AuthLoginResponse:
         if r.status_code != 200:
             raise HTTPException(status_code=401, detail=f"Invalid credentials: {r.text}")
         data = r.json()
+        user_id = data["user"]["id"]
+        user_email = data["user"].get("email", "")
+        user_meta = data["user"].get("user_metadata", {})
+
+        # Ensure a profile row exists in the local database
+        profile = await session.get(Profile, user_id)
+        if not profile:
+            profile = Profile(
+                id=user_id,
+                full_name=user_meta.get("full_name", user_email.split("@")[0]),
+                role=user_meta.get("role", "student"),
+            )
+            session.add(profile)
+            await session.commit()
+
         return AuthLoginResponse(
             access_token=data["access_token"],
             token_type="bearer",
-            user_id=data["user"]["id"],
+            user_id=user_id,
         )
 
 

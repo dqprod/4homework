@@ -101,7 +101,6 @@ serve(async (req) => {
       solution_steps: solutionSteps,
       final_answer: finalAnswer,
       estimated_study_time: studyTime,
-      processing: false,
     }).select().single();
 
     if (pErr) return new Response(JSON.stringify({ error: pErr.message }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });

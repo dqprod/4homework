@@ -181,6 +181,7 @@ async def submit_review_feedback(
 async def run_review_reminder_digest(
     background: BackgroundTasks,
     user: Profile = Depends(current_user),
+    email: str = Query(default=None, description="Override recipient email"),
 ) -> dict:
     """Trigger reminder email/in-app notifications for reviews due today.
 
@@ -200,5 +201,14 @@ async def run_review_reminder_digest(
         else:
             target_ids.append(user.id)
 
-    background.add_task(send_review_reminders, target_ids=target_ids, parent_email=None)
-    return {"queued": True, "targets": target_ids}
+    user_emails = {}
+    if email:
+        user_emails[user.id] = email
+
+    background.add_task(
+        send_review_reminders,
+        target_ids=target_ids,
+        parent_email=email,
+        user_emails=user_emails,
+    )
+    return {"queued": True, "targets": target_ids, "email": email or "not-provided"}
