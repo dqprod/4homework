@@ -6,7 +6,7 @@ frontend/.next/
 dist/
 
 # Python (no longer needed - migrated to Edge Functions)
-app/
+/app/
 *.py
 *.pyc
 __pycache__/
@@ -40,7 +40,7 @@ tmp/
 pytest.ini
 *.py
 __pycache__/
-app/
+/app/
 requirements*.txt
 serve*.sh
 deploy_*.sh
