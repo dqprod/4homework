@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { buildHeaders, clearAuth, getUserId } from "@/lib/auth";
-import { Settings, User, Baby, LogOut, Trash2, Plus } from "lucide-react";
+import { Settings, User, Baby, LogOut, Trash2, Plus, Mail, Info } from "lucide-react";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -12,8 +12,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
-  const [newChildEmail, setNewChildEmail] = useState("");
+  const [newChildInput, setNewChildInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addSuccess, setAddSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -51,21 +53,31 @@ export default function SettingsPage() {
   };
 
   const addChild = async () => {
-    if (!newChildEmail.trim()) return;
+    if (!newChildInput.trim()) return;
+    setAddError(null);
+    setAddSuccess(null);
     const uid = getUserId();
     if (!uid) return;
+
+    // Detect if input is email (contains @) or UUID
+    const isEmail = newChildInput.includes("@");
+    const body = isEmail ? { email: newChildInput.trim() } : { child_id: newChildInput.trim() };
+
     const res = await fetch(`/api/parent/child`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...buildHeaders() },
-      body: JSON.stringify({ child_id: newChildEmail }),
+      body: JSON.stringify(body),
     });
+
     if (res.ok) {
-      setNewChildEmail("");
+      setNewChildInput("");
       const cRes = await fetch(`/api/parent/children`, { headers: buildHeaders() });
       if (cRes.ok) setChildren((await cRes.json()).children || []);
-      alert("子どもを追加しました");
+      setAddSuccess(`${isEmail ? "メール" : "ID"}で子供を追加しました`);
+      setTimeout(() => setAddSuccess(null), 3000);
     } else {
-      alert("追加失敗: 子どもIDが正しいか確認してください");
+      const err = await res.json();
+      setAddError(err.error || "追加失敗");
     }
   };
 
@@ -109,19 +121,35 @@ export default function SettingsPage() {
       {profile?.role === "parent" && (
         <section className="bg-white p-4 md:p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-gray-400 uppercase flex items-center gap-2"><Baby className="w-4 h-4" /> 子どもの管理</h2>
-          <div className="flex gap-2">
-            <input
-              value={newChildEmail}
-              onChange={e => setNewChildEmail(e.target.value)}
-              placeholder="子どものID (UUID) を入力"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-500"
-            />
-            <button onClick={addChild} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center gap-1">
-              <Plus className="w-4 h-4" /> 追加
-            </button>
+
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                value={newChildInput}
+                onChange={e => setNewChildInput(e.target.value)}
+                placeholder="子供のメールアドレス または ID (UUID)"
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <button onClick={addChild} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center gap-1 shrink-0">
+                <Plus className="w-4 h-4" /> 追加
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+              <Info className="w-3 h-3" />
+              メールアドレスかUUIDを入力してください。例: hanako@homework.jp
+            </div>
           </div>
+
+          {addSuccess && (
+            <div className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded-lg">{addSuccess}</div>
+          )}
+          {addError && (
+            <div className="text-xs text-red-700 bg-red-50 px-3 py-2 rounded-lg">{addError}</div>
+          )}
+
           {children.length > 0 && (
             <div className="space-y-2 mt-3">
+              <p className="text-xs text-gray-500 font-medium">登録済みの子供</p>
               {children.map(c => (
                 <div key={c.child_id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                   <div>

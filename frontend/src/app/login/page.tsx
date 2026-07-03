@@ -7,8 +7,10 @@ import { setAuth } from "@/lib/auth";
 import { loginSchema, signupSchema } from "@/lib/validations";
 
 const USERS = [
-  { id: "test-user-0000-0000-0000-000000000001", name: "Taro (学生)", role: "student" },
-  { id: "d853df1d-dcb7-407c-a9f8-0538aa70ee42", name: "お父さん (保護者)", role: "parent" },
+  { id: "3064f2b8-fb31-49b9-bc95-af2825496739", name: "お父さん (保護者)", role: "parent" as const },
+  { id: "afb94c66-47c2-4a15-881c-37c6a70fbef6", name: "花子 (小4)", role: "student" as const },
+  { id: "2ae19dcd-5b87-4b99-b432-868396313620", name: "太郎 (小3)", role: "student" as const },
+  { id: "a0c0ed91-e4fb-4b0b-a566-e2c40327c146", name: "次郎 (小2)", role: "student" as const },
 ];
 
 export default function LoginPage() {
@@ -29,7 +31,6 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      // Try our backend single-step login first (handles API-key compatibility)
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,7 +86,7 @@ export default function LoginPage() {
         {mode === "demo" ? (
           <div className="space-y-3">
             <p className="text-xs text-gray-500 text-center">
-              ローカル DB の既存テストユーザーでログイン
+              Supabase のテストユーザーでかんたんログイン
             </p>
             {USERS.map(u => (
               <button
@@ -98,13 +99,13 @@ export default function LoginPage() {
                   <p className="text-[10px] text-gray-400 font-mono">{u.id.slice(0, 16)}...</p>
                 </div>
                 <span className={`text-[10px] px-2 py-1 rounded-full ${u.role === "parent" ? "bg-yellow-100 text-yellow-700" : "bg-blue-100 text-blue-700"}`}>
-                  {u.role}
+                  {u.role === "parent" ? "保護者" : "学生"}
                 </span>
               </button>
             ))}
             <div className="flex items-start gap-2 text-xs text-yellow-700 bg-yellow-50 p-3 rounded-lg">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <p>Demo モードは認証をバイパスして既存データを表示します。Supabase ログインは登録フローをスキップします（本番はメール確認が必要）。</p>
+              <p>Demo モードは API 認証をスキップします。実際の学習データを表示できます。</p>
             </div>
           </div>
         ) : (
@@ -139,6 +140,9 @@ export default function LoginPage() {
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign In"}
             </button>
+            <p className="text-xs text-gray-400 text-center">
+              テストアカウント: parent@homework.jp / Home_work32!
+            </p>
           </form>
         )}
 

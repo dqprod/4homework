@@ -2,6 +2,7 @@
 
 import { getUserId, getChildViewId, buildHeaders } from "@/lib/auth";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Calendar, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Review {
@@ -17,9 +18,11 @@ const MONTHS = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","
 const DAYS = ["日","月","火","水","木","金","土"];
 
 export default function ReviewsPage() {
+  const router = useRouter();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [problems, setProblems] = useState<Record<string, Problem>>({});
   const [filter, setFilter] = useState("all");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
@@ -35,7 +38,6 @@ export default function ReviewsPage() {
     if (!res.ok) return;
     const data = await res.json();
     setReviews(data.reviews);
-    // Fetch associated problem texts
     const probs: Record<string, Problem> = {};
     const pParams = new URLSearchParams({ limit: "200" });
     if (childId) pParams.set("user_id", childId);
@@ -60,14 +62,24 @@ export default function ReviewsPage() {
     await fetchReviews();
   };
 
+  const handleDateClick = (dateStr: string) => {
+    if (selectedDate === dateStr) {
+      setSelectedDate(null);
+      setFilter("all");
+    } else {
+      setSelectedDate(dateStr);
+      setFilter("day");
+    }
+  };
+
   const filtered = reviews.filter(r => {
+    if (filter === "day" && selectedDate) return r.scheduled_date === selectedDate;
     if (filter === "today") return r.scheduled_date === new Date().toISOString().slice(0,10);
     if (filter === "due") return !r.completed && r.scheduled_date < new Date().toISOString().slice(0,10);
     if (filter === "completed") return r.completed;
     return true;
   });
 
-  // Calendar
   const todayStr = new Date().toISOString().slice(0,10);
   const reviewMap = new Map<string, number>();
   reviews.forEach(r => { if (!r.completed) reviewMap.set(r.scheduled_date, (reviewMap.get(r.scheduled_date) || 0) + 1); });
@@ -83,10 +95,19 @@ export default function ReviewsPage() {
     const ds = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
     const cnt = reviewMap.get(ds) || 0;
     const isToday = ds === todayStr;
+    const isSelected = ds === selectedDate;
     calCells.push(
-      <div key={d} className={`relative p-1 rounded-lg text-xs md:text-sm text-center ${isToday ? "bg-blue-50 border border-blue-200" : ""}`}>
-        <span className={isToday ? "font-bold text-blue-600" : ""}>{d}</span>
-        {cnt > 0 && <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[8px] rounded-full w-3.5 h-3.5 flex items-center justify-center">{cnt}</span>}
+      <div
+        key={d}
+        onClick={() => handleDateClick(ds)}
+        className={`relative p-1 rounded-lg text-xs md:text-sm text-center cursor-pointer transition-colors hover:bg-blue-50
+          ${isSelected ? "bg-blue-600 text-white ring-2 ring-blue-300" : isToday && !isSelected ? "bg-blue-50 border border-blue-200" : ""}`}
+      >
+        <span className={isSelected ? "font-bold text-white" : isToday ? "font-bold text-blue-600" : ""}>{d}</span>
+        {cnt > 0 && (
+          <span className={`absolute -top-0.5 -right-0.5 text-[8px] rounded-full w-3.5 h-3.5 flex items-center justify-center
+            ${isSelected ? "bg-white text-blue-600" : "bg-red-500 text-white"}`}>{cnt}</span>
+        )}
       </div>
     );
   }
@@ -106,21 +127,27 @@ export default function ReviewsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-1.5 md:gap-2 overflow-x-auto">
+      <div className="flex gap-1.5 md:gap-2 overflow-x-auto flex-wrap">
         {[
           { k: "all", l: "📋 すべて" },
           { k: "today", l: "📌 今日" },
           { k: "due", l: "⚠️ 超過" },
           { k: "completed", l: "✅ 完了" },
         ].map(({ k, l }) => (
-          <button key={k} onClick={() => setFilter(k)}
+          <button key={k} onClick={() => { setFilter(k); setSelectedDate(null); }}
             className={`px-2 md:px-3 py-1 rounded-full text-[10px] md:text-xs whitespace-nowrap transition-colors ${filter === k ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600"}`}>{l}</button>
         ))}
+        {selectedDate && (
+          <button onClick={() => { setSelectedDate(null); setFilter("all"); }}
+            className="px-2 md:px-3 py-1 rounded-full text-[10px] md:text-xs bg-gray-200 text-gray-600 hover:bg-gray-300">
+            ✕ {selectedDate}
+          </button>
+        )}
       </div>
 
       {/* Review list */}
       <div className="space-y-2">
-        {filtered.slice(0, 100).map(r => {
+        {filtered.sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date)).slice(0, 100).map(r => {
           const p = problems[r.problem_id];
           const isDue = !r.completed && r.scheduled_date < todayStr;
           const isToday = !r.completed && r.scheduled_date === todayStr;
