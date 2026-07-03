@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { buildHeaders, clearAuth, getUserId } from "@/lib/auth";
 import { Settings, User, Baby, LogOut, Trash2, Plus } from "lucide-react";
 
 export default function SettingsPage() {
@@ -17,17 +17,17 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/login"); return; }
+      const uid = getUserId();
+      if (!uid) { router.push("/login"); return; }
       try {
-        const pRes = await fetch(`/api/profiles/me`, { headers: { "X-User-Id": user.id } });
+        const pRes = await fetch(`/api/profiles/me`, { headers: buildHeaders() });
         if (pRes.ok) {
           const p = await pRes.json();
           setProfile(p);
           setFullName(p.full_name || "");
           setUsername(p.username || "");
           if (p.role === "parent") {
-            const cRes = await fetch(`/api/parent/children`, { headers: { "X-User-Id": user.id } });
+            const cRes = await fetch(`/api/parent/children`, { headers: buildHeaders() });
             if (cRes.ok) setChildren((await cRes.json()).children || []);
           }
         }
@@ -38,12 +38,12 @@ export default function SettingsPage() {
   }, []);
 
   const saveProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const uid = getUserId();
+    if (!uid) return;
     setSaving(true);
     await fetch(`/api/profiles`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "X-User-Id": user.id },
+      headers: { "Content-Type": "application/json", ...buildHeaders() },
       body: JSON.stringify({ full_name: fullName, username }),
     });
     setSaving(false);
@@ -52,16 +52,16 @@ export default function SettingsPage() {
 
   const addChild = async () => {
     if (!newChildEmail.trim()) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const uid = getUserId();
+    if (!uid) return;
     const res = await fetch(`/api/parent/child`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-User-Id": user.id },
+      headers: { "Content-Type": "application/json", ...buildHeaders() },
       body: JSON.stringify({ child_id: newChildEmail }),
     });
     if (res.ok) {
       setNewChildEmail("");
-      const cRes = await fetch(`/api/parent/children`, { headers: { "X-User-Id": user.id } });
+      const cRes = await fetch(`/api/parent/children`, { headers: buildHeaders() });
       if (cRes.ok) setChildren((await cRes.json()).children || []);
       alert("子どもを追加しました");
     } else {
@@ -71,9 +71,9 @@ export default function SettingsPage() {
 
   const removeChild = async (childId: string) => {
     if (!confirm("子供のリンクを解除しますか？")) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    await fetch(`/api/parent/child/${childId}`, { method: "DELETE", headers: { "X-User-Id": user.id } });
+    const uid = getUserId();
+    if (!uid) return;
+    await fetch(`/api/parent/child/${childId}`, { method: "DELETE", headers: buildHeaders() });
     setChildren(children.filter(c => c.child_id !== childId));
   };
 
@@ -141,7 +141,7 @@ export default function SettingsPage() {
       )}
 
       <div className="flex justify-center pt-4">
-        <button onClick={() => { supabase.auth.signOut(); router.push("/login"); }} className="flex items-center gap-2 text-red-500 text-sm font-medium hover:underline">
+        <button onClick={() => { clearAuth(); router.push("/login"); }} className="flex items-center gap-2 text-red-500 text-sm font-medium hover:underline">
           <LogOut className="w-4 h-4" /> ログアウト
         </button>
       </div>

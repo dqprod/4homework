@@ -1,8 +1,8 @@
 "use client";
 
+import { getUserId, getChildViewId, buildHeaders } from "@/lib/auth";
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
-import { Calendar, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Review {
   id: string; problem_id: string; user_id: string;
@@ -16,11 +16,6 @@ interface Problem { id: string; problem_text: string; subject_name: string; }
 const MONTHS = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
 const DAYS = ["日","月","火","水","木","金","土"];
 
-function getTargetId(): string {
-  const cid = sessionStorage.getItem("childViewId");
-  return cid || "";
-}
-
 export default function ReviewsPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [problems, setProblems] = useState<Record<string, Problem>>({});
@@ -29,15 +24,14 @@ export default function ReviewsPage() {
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
 
-  const childId = getTargetId();
+  const childId = getChildViewId();
 
   const fetchReviews = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const uid = childId || user.id;
+    const uid = getUserId();
+    if (!uid) return;
     const params = new URLSearchParams({ limit: "200" });
     if (childId) params.set("user_id", childId);
-    const res = await fetch(`/api/reviews?${params}`, { headers: { "X-User-Id": user.id } });
+    const res = await fetch(`/api/reviews?${params}`, { headers: buildHeaders() });
     if (!res.ok) return;
     const data = await res.json();
     setReviews(data.reviews);
@@ -45,7 +39,7 @@ export default function ReviewsPage() {
     const probs: Record<string, Problem> = {};
     const pParams = new URLSearchParams({ limit: "200" });
     if (childId) pParams.set("user_id", childId);
-    const pRes = await fetch(`/api/problems?${pParams}`, { headers: { "X-User-Id": user.id } });
+    const pRes = await fetch(`/api/problems?${pParams}`, { headers: buildHeaders() });
     if (pRes.ok) {
       const pData = await pRes.json();
       pData.problems.forEach((p: Problem) => { probs[p.id] = p; });
@@ -56,11 +50,11 @@ export default function ReviewsPage() {
   useEffect(() => { fetchReviews().then(() => setLoading(false)); }, [childId]);
 
   const toggleReview = async (id: string, completed: boolean) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const uid = getUserId();
+    if (!uid) return;
     await fetch(`/api/reviews/${id}/status`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", "X-User-Id": user.id },
+      headers: { "Content-Type": "application/json", ...buildHeaders() },
       body: JSON.stringify({ completed: !completed }),
     });
     await fetchReviews();

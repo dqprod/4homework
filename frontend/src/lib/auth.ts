@@ -2,6 +2,8 @@
  * Unified auth helper - works with both Supabase real auth and demo mode.
  */
 
+import { supabase } from "./supabase";
+
 const TOKEN_KEY = "supabase_access_token";
 const USER_ID_KEY = "user_id";
 const CHILD_VIEW_KEY = "childViewId";
@@ -14,6 +16,17 @@ export function getAccessToken(): string | null {
 export function getUserId(): string | null {
   if (typeof window === "undefined") return null;
   return sessionStorage.getItem(USER_ID_KEY);
+}
+
+/**
+ * Get user ID with Supabase session fallback.
+ * Checks sessionStorage first (demo mode), then Supabase session (real auth).
+ */
+export async function getUserIdAsync(): Promise<string | null> {
+  const local = getUserId();
+  if (local) return local;
+  const { data } = await supabase.auth.getUser();
+  return data?.user?.id || null;
 }
 
 export function getChildViewId(): string | null {

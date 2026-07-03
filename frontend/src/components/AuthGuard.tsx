@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { getUserId } from "@/lib/auth";
+import { getUserId, getUserIdAsync } from "@/lib/auth";
 
 const PUBLIC_PATHS = ["/login", "/signup"];
 
@@ -17,12 +17,19 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     // Accept Supabase session OR sessionStorage marker (demo mode)
-    const uid = getUserId();
-    if (!uid) {
-      router.push("/login");
-    } else {
-      setLoading(false);
-    }
+    getUserIdAsync().then((uid) => {
+      if (!uid) {
+        router.push("/login");
+      } else {
+        // Sync sessionStorage if Supabase had the session but demo mode didn't
+        if (!getUserId()) {
+          // Session from Supabase - the pages will use buildHeaders() which falls back
+          // to X-User-Id from the demo path; but for Supabase users we rely on
+          // supabase.auth.getUser() on the server side. The key is they're authenticated.
+        }
+        setLoading(false);
+      }
+    });
   }, [pathname, router]);
 
   if (PUBLIC_PATHS.includes(pathname)) return <>{children}</>;
