@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, Search, Loader2, Trash2 } from "lucide-react";
+import { Upload, Search, Loader2, Trash2, X } from "lucide-react";
 import {
   getUserId, getChildViewId, buildHeaders, clearAuth,
 } from "@/lib/auth";
@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [subjectFilter, setSubjectFilter] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -34,6 +35,22 @@ export default function DashboardPage() {
   const show = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setSelectedFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    } else {
+      setPreviewUrl(null);
+    }
+  };
+
+  const clearFile = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
   };
 
   const fetchProblems = useCallback(async () => {
@@ -77,7 +94,7 @@ export default function DashboardPage() {
       }
       const wasAsync = (await res.json()).processing;
       show(wasAsync ? "⏳ AI解析中...1-2分で反映されます" : "✅ 完了");
-      setSelectedFile(null);
+      clearFile();
       await fetchProblems();
       if (wasAsync) startPollingForNew();
     } finally { setUploading(false); }
@@ -124,7 +141,12 @@ export default function DashboardPage() {
       {!childViewId && (
         <div className="bg-white rounded-xl border-2 border-dashed border-blue-200 p-3 md:p-4">
           <div className="flex flex-col sm:flex-row gap-2 md:gap-3">
-            <input type="file" accept="image/*" onChange={e => setSelectedFile(e.target.files?.[0] || null)} className="text-xs" />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="text-xs file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
             <select value={selectedSubject} onChange={e => setSelectedSubject(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs md:text-sm">
               {subjects.map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
             </select>
@@ -132,6 +154,25 @@ export default function DashboardPage() {
               {uploading ? "解析中..." : "アップロード"}
             </button>
           </div>
+          {/* Image preview */}
+          {previewUrl && (
+            <div className="relative mt-3 inline-block">
+              <img src={previewUrl} alt="Preview" className="h-32 w-auto rounded-lg border border-gray-200 object-cover" />
+              <button
+                onClick={clearFile}
+                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-xl text-sm shadow-lg z-50 animate-bounce">
+          {toast}
         </div>
       )}
 

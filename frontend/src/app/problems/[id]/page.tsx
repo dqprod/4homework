@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { ChevronLeft, Trash2, Edit2, Loader2, Plus, CheckCircle2, XCircle, Calendar } from "lucide-react";
+import { ChevronLeft, Trash2, Edit2, Loader2, Plus, CheckCircle2, XCircle, Calendar, Star } from "lucide-react";
 import { buildHeaders } from "@/lib/auth";
 
 interface ReviewSchedule {
@@ -33,6 +33,24 @@ interface ProblemDetail {
   manual_reviews: ManualReview[];
 }
 
+function StarRating({ value, onChange, size = "sm" }: { value: number; onChange: (v: number) => void; size?: string }) {
+  const sizeClass = size === "sm" ? "w-4 h-4" : "w-5 h-5";
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange(star)}
+          className={`${sizeClass} transition-colors ${star <= value ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}
+        >
+          <Star className="w-full h-full fill-current" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ProblemDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -44,6 +62,8 @@ export default function ProblemDetailPage() {
   const [memoDraft, setMemoDraft] = useState("");
   const [manualDate, setManualDate] = useState("");
   const [addingManual, setAddingManual] = useState(false);
+  const [feedbackReviewId, setFeedbackReviewId] = useState<string | null>(null);
+  const [feedbackRating, setFeedbackRating] = useState(0);
 
   const fetchDetail = useCallback(async () => {
     if (!id) return;
@@ -76,6 +96,25 @@ export default function ProblemDetailPage() {
       headers: { "Content-Type": "application/json", ...buildHeaders() },
       body: JSON.stringify({ completed: !completed }),
     });
+    if (!completed) {
+      // Just marked as complete — show feedback dialog
+      setFeedbackReviewId(reviewId);
+      setFeedbackRating(0);
+    } else {
+      fetchDetail();
+    }
+  };
+
+  const submitFeedback = async () => {
+    if (feedbackReviewId && feedbackRating > 0) {
+      await fetch(`/api/reviews/${feedbackReviewId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...buildHeaders() },
+        body: JSON.stringify({ difficulty_rating: feedbackRating }),
+      });
+    }
+    setFeedbackReviewId(null);
+    setFeedbackRating(0);
     fetchDetail();
   };
 
@@ -194,7 +233,7 @@ export default function ProblemDetailPage() {
             <p className="text-sm text-gray-400 text-center py-4">復習計画がまだ作成されていません</p>
           ) : (
             <div className="space-y-2">
-              {problem.review_schedules.map((r, idx) => {
+              {problem.review_schedules.map((r) => {
                 const isDue = !r.completed && r.scheduled_date < todayStr;
                 const isToday = !r.completed && r.scheduled_date === todayStr;
                 return (
@@ -242,7 +281,6 @@ export default function ProblemDetailPage() {
           </div>
         </div>
         <div className="p-4 md:p-6 space-y-3">
-          {/* Add manual review */}
           <div className="flex gap-2 items-center">
             <input
               type="date"
@@ -259,7 +297,6 @@ export default function ProblemDetailPage() {
             </button>
           </div>
 
-          {/* Manual review list */}
           {problem.manual_reviews && problem.manual_reviews.length > 0 ? (
             <div className="space-y-2 mt-2">
               {problem.manual_reviews.map(m => (
@@ -281,6 +318,33 @@ export default function ProblemDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Feedback dialog */}
+      {feedbackReviewId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl p-6 shadow-xl max-w-sm w-full mx-4 space-y-4">
+            <h3 className="text-sm font-semibold text-gray-700 text-center">復習完了！難易度は？</h3>
+            <div className="flex justify-center">
+              <StarRating value={feedbackRating} onChange={setFeedbackRating} size="lg" />
+            </div>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => { setFeedbackReviewId(null); fetchDetail(); }}
+                className="px-4 py-2 text-xs text-gray-500 hover:text-gray-700"
+              >
+                スキップ
+              </button>
+              <button
+                onClick={submitFeedback}
+                disabled={feedbackRating === 0}
+                className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                送信
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { supabase } from "@/lib/supabase";
-import { BookOpen, Calendar, Settings, LayoutDashboard, Users, LogOut } from "lucide-react";
+import { buildHeaders, getUserId, getChildViewId, setChildViewId, clearAuth } from "@/lib/auth";
+import { BookOpen, Calendar, Settings, LayoutDashboard, Users, LogOut, BarChart3 } from "lucide-react";
 
 interface ChildSummary {
   child_id: string;
@@ -16,39 +16,39 @@ interface ChildSummary {
 export default function AppNavbar() {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
   const [role, setRole] = useState<string>("student");
   const [children, setChildren] = useState<ChildSummary[]>([]);
-  const [childViewId, setChildViewId] = useState<string | null>(null);
+  const [childViewId, setChildViewIdLocal] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) return;
-      setUser(data.user);
-      fetch(`/api/profiles/me`, { headers: { "X-User-Id": data.user.id } })
-        .then(r => r.json())
-        .then(p => { setRole(p.role || "student"); })
-        .catch(() => {});
-      if (data.user.id) {
-        fetch(`/api/parent/children`, { headers: { "X-User-Id": data.user.id } })
-          .then(r => r.json())
-          .then(d => setChildren(d.children || []))
-          .catch(() => {});
-      }
-    });
+    const uid = getUserId();
+    if (!uid) return;
+    fetch(`/api/profiles/me`, { headers: buildHeaders() })
+      .then(r => r.json())
+      .then(p => { setRole(p.role || "student"); })
+      .catch(() => {});
+    fetch(`/api/parent/children`, { headers: buildHeaders() })
+      .then(r => r.json())
+      .then(d => setChildren(d.children || []))
+      .catch(() => {});
+    setChildViewIdLocal(getChildViewId());
   }, []);
 
   const switchChild = (childId: string) => {
+    setChildViewIdLocal(childId);
     setChildViewId(childId);
-    // Store child context in sessionStorage for child pages
-    sessionStorage.setItem("childViewId", childId);
     router.push("/dashboard");
   };
   
   const exitChildView = () => {
+    setChildViewIdLocal(null);
     setChildViewId(null);
-    sessionStorage.removeItem("childViewId");
     router.push("/dashboard");
+  };
+
+  const handleLogout = () => {
+    clearAuth();
+    router.push("/login");
   };
 
   return (
@@ -98,6 +98,15 @@ export default function AppNavbar() {
             <Calendar className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">復習</span>
           </button>
+          {role === "parent" && (
+            <button
+              onClick={() => router.push("/parent")}
+              className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/parent") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">概況</span>
+            </button>
+          )}
           <button
             onClick={() => router.push("/settings")}
             className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/settings") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
@@ -106,7 +115,7 @@ export default function AppNavbar() {
             <span className="hidden sm:inline">設定</span>
           </button>
           <button
-            onClick={() => { supabase.auth.signOut(); router.push("/login"); }}
+            onClick={handleLogout}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-gray-400 hover:text-red-500 transition-colors"
           >
             <LogOut className="w-3.5 h-3.5" />
