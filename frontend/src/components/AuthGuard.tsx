@@ -16,17 +16,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
-    // Accept Supabase session OR sessionStorage marker (demo mode)
     getUserIdAsync().then((uid) => {
       if (!uid) {
         router.push("/login");
       } else {
-        // Sync sessionStorage if Supabase had the session but demo mode didn't
-        if (!getUserId()) {
-          // Session from Supabase - the pages will use buildHeaders() which falls back
-          // to X-User-Id from the demo path; but for Supabase users we rely on
-          // supabase.auth.getUser() on the server side. The key is they're authenticated.
-        }
         setLoading(false);
       }
     });

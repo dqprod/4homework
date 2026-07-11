@@ -3,7 +3,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { ChevronLeft, Trash2, Edit2, Loader2, Plus, CheckCircle2, XCircle, Calendar, Star } from "lucide-react";
-import { buildHeaders } from "@/lib/auth";
+import {
+  getProblemById,
+  deleteProblem,
+  updateProblemMemo,
+  addManualReview,
+  updateReviewStatus,
+  submitFeedback,
+} from "@/lib/api";
 
 interface ReviewSchedule {
   id: string;
@@ -38,12 +45,8 @@ function StarRating({ value, onChange, size = "sm" }: { value: number; onChange:
   return (
     <div className="flex items-center gap-0.5">
       {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          type="button"
-          onClick={() => onChange(star)}
-          className={`${sizeClass} transition-colors ${star <= value ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}
-        >
+        <button key={star} type="button" onClick={() => onChange(star)}
+          className={`${sizeClass} transition-colors ${star <= value ? "text-yellow-400" : "text-gray-200 hover:text-yellow-300"}`}>
           <Star className="w-full h-full fill-current" />
         </button>
       ))}
@@ -68,84 +71,87 @@ export default function ProblemDetailPage() {
   const fetchDetail = useCallback(async () => {
     if (!id) return;
     try {
-      const res = await fetch(`/api/problems/${id}`, { headers: buildHeaders() });
-      if (!res.ok) { setProblem(null); setLoading(false); return; }
-      const data = await res.json();
+      const data = await getProblemById(id);
       setProblem(data);
-      setMemoDraft(data.memo || "");
+      setMemoDraft(data?.memo || "");
       setLoading(false);
-    } catch { setLoading(false); }
+    } catch {
+      setProblem(null);
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
   const saveMemo = async () => {
     if (!id || !problem) return;
-    await fetch(`/api/problems/${id}`, {
-      method: "PATCH",
-      headers: { ...buildHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ memo: memoDraft }),
-    });
-    setProblem({ ...problem, memo: memoDraft });
-    setEditingMemo(false);
+    try {
+      await updateProblemMemo(id, memoDraft);
+      setProblem({ ...problem, memo: memoDraft });
+      setEditingMemo(false);
+    } catch (err: any) {
+      alert(err.message || "メモの保存に失敗しました");
+    }
   };
 
   const toggleReviewStatus = async (reviewId: string, completed: boolean) => {
-    await fetch(`/api/reviews/${reviewId}/status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...buildHeaders() },
-      body: JSON.stringify({ completed: !completed }),
-    });
-    if (!completed) {
-      // Just marked as complete — show feedback dialog
-      setFeedbackReviewId(reviewId);
-      setFeedbackRating(0);
-    } else {
-      fetchDetail();
+    try {
+      await updateReviewStatus(reviewId, !completed);
+      if (!completed) {
+        setFeedbackReviewId(reviewId);
+        setFeedbackRating(0);
+      } else {
+        await fetchDetail();
+      }
+    } catch (err: any) {
+      alert(err.message || "更新に失敗しました");
     }
   };
 
-  const submitFeedback = async () => {
+  const submitFeedbackFn = async () => {
     if (feedbackReviewId && feedbackRating > 0) {
-      await fetch(`/api/reviews/${feedbackReviewId}/feedback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...buildHeaders() },
-        body: JSON.stringify({ difficulty_rating: feedbackRating }),
-      });
+      try {
+        await submitFeedback(feedbackReviewId, feedbackRating);
+      } catch {}
     }
     setFeedbackReviewId(null);
     setFeedbackRating(0);
-    fetchDetail();
+    await fetchDetail();
   };
 
-  const addManualReview = async () => {
+  const addManualReviewFn = async () => {
     if (!id || !manualDate) return;
     setAddingManual(true);
-    await fetch(`/api/problems/${id}/manual-reviews`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...buildHeaders() },
-      body: JSON.stringify({ scheduled_date: manualDate }),
-    });
-    setManualDate("");
-    setAddingManual(false);
-    fetchDetail();
+    try {
+      await addManualReview(id, manualDate);
+      setManualDate("");
+      await fetchDetail();
+    } catch (err: any) {
+      alert(err.message || "追加に失敗しました");
+    } finally {
+      setAddingManual(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!id || !confirm("削除しますか？")) return;
+    try {
+      await deleteProblem(id);
+      router.push("/dashboard");
+    } catch (err: any) {
+      alert(err.message || "削除に失敗しました");
+    }
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    );
+    return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
   }
 
   if (!problem) {
     return (
       <div className="max-w-3xl mx-auto p-6 text-center">
         <p className="text-gray-500">問題が見つかりません</p>
-        <button onClick={() => router.push("/dashboard")} className="mt-4 text-sm text-blue-600">
-          ← 戻る
-        </button>
+        <button onClick={() => router.push("/dashboard")} className="mt-4 text-sm text-blue-600">← 戻る</button>
       </div>
     );
   }
@@ -163,12 +169,7 @@ export default function ProblemDetailPage() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="p-3 md:p-4 bg-gray-50 border-b flex justify-between items-center">
           <span className="text-xs md:text-sm font-medium text-gray-600">{problem.subject_name}</span>
-          <button onClick={async () => {
-            if (confirm("削除しますか？")) {
-              await fetch(`/api/problems/${id}`, { method: "DELETE", headers: buildHeaders() });
-              router.push("/dashboard");
-            }
-          }} className="text-gray-400 hover:text-red-500">
+          <button onClick={handleDelete} className="text-gray-400 hover:text-red-500">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
@@ -201,7 +202,7 @@ export default function ProblemDetailPage() {
           <div className="pt-4 md:pt-6 border-t space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-gray-400 uppercase">📝 メモ</label>
-              {!editingMemo && problem.memo !== undefined && (
+              {!editingMemo && (
                 <button onClick={() => setEditingMemo(true)} className="text-blue-500 text-xs flex items-center gap-1">
                   <Edit2 className="w-3 h-3" /> 編集
                 </button>
@@ -209,7 +210,7 @@ export default function ProblemDetailPage() {
             </div>
             {editingMemo ? (
               <div className="flex gap-2">
-                <textarea value={memoDraft} onChange={e => setMemoDraft(e.target.value)} className="flex-1 border rounded-lg p-2 text-sm" rows={3} />
+                <textarea value={memoDraft} onChange={(e) => setMemoDraft(e.target.value)} className="flex-1 border rounded-lg p-2 text-sm" rows={3} />
                 <div className="flex flex-col gap-2">
                   <button onClick={saveMemo} className="bg-blue-600 text-white px-3 py-1 rounded-lg text-xs">保存</button>
                   <button onClick={() => setEditingMemo(false)} className="bg-gray-100 px-3 py-1 rounded-lg text-xs">取消</button>
@@ -244,9 +245,7 @@ export default function ProblemDetailPage() {
                       </span>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs font-medium ${r.completed ? "line-through text-gray-400" : ""}`}>
-                            {r.scheduled_date}
-                          </span>
+                          <span className={`text-xs font-medium ${r.completed ? "line-through text-gray-400" : ""}`}>{r.scheduled_date}</span>
                           {isToday && <span className="text-[10px] text-yellow-700 bg-yellow-100 px-1.5 py-0.5 rounded-full">📌 今日</span>}
                           {isDue && <span className="text-[10px] text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full">⚠️ 超過</span>}
                         </div>
@@ -258,10 +257,8 @@ export default function ProblemDetailPage() {
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => toggleReviewStatus(r.id, r.completed)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${r.completed ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}
-                    >
+                    <button onClick={() => toggleReviewStatus(r.id, r.completed)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${r.completed ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>
                       {r.completed ? "戻す" : "完了"}
                     </button>
                   </div>
@@ -282,29 +279,20 @@ export default function ProblemDetailPage() {
         </div>
         <div className="p-4 md:p-6 space-y-3">
           <div className="flex gap-2 items-center">
-            <input
-              type="date"
-              value={manualDate}
-              onChange={e => setManualDate(e.target.value)}
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-500"
-            />
-            <button
-              onClick={addManualReview}
-              disabled={addingManual || !manualDate}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
-            >
+            <input type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-500" />
+            <button onClick={addManualReviewFn} disabled={addingManual || !manualDate}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center gap-1">
               <Plus className="w-3.5 h-3.5" /> 追加
             </button>
           </div>
 
           {problem.manual_reviews && problem.manual_reviews.length > 0 ? (
             <div className="space-y-2 mt-2">
-              {problem.manual_reviews.map(m => (
+              {problem.manual_reviews.map((m) => (
                 <div key={m.id} className="flex items-center justify-between p-2.5 rounded-xl border border-gray-100">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs ${m.completed ? "line-through text-gray-400" : ""}`}>
-                      {m.scheduled_date}
-                    </span>
+                    <span className={`text-xs ${m.completed ? "line-through text-gray-400" : ""}`}>{m.scheduled_date}</span>
                     {m.note && <span className="text-[10px] text-gray-400">({m.note})</span>}
                     {m.completed && <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />}
                   </div>
@@ -312,9 +300,7 @@ export default function ProblemDetailPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 text-center py-2">
-              任意の日に復習を追加できます。試験前に便利です。
-            </p>
+            <p className="text-sm text-gray-400 text-center py-2">任意の日に復習を追加できます。試験前に便利です。</p>
           )}
         </div>
       </div>
@@ -328,19 +314,10 @@ export default function ProblemDetailPage() {
               <StarRating value={feedbackRating} onChange={setFeedbackRating} size="lg" />
             </div>
             <div className="flex gap-2 justify-center">
-              <button
-                onClick={() => { setFeedbackReviewId(null); fetchDetail(); }}
-                className="px-4 py-2 text-xs text-gray-500 hover:text-gray-700"
-              >
-                スキップ
-              </button>
-              <button
-                onClick={submitFeedback}
-                disabled={feedbackRating === 0}
-                className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                送信
-              </button>
+              <button onClick={() => { setFeedbackReviewId(null); fetchDetail(); }}
+                className="px-4 py-2 text-xs text-gray-500 hover:text-gray-700">スキップ</button>
+              <button onClick={submitFeedbackFn} disabled={feedbackRating === 0}
+                className="bg-blue-600 text-white px-5 py-2 rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">送信</button>
             </div>
           </div>
         </div>

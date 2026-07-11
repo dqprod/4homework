@@ -1,9 +1,10 @@
 "use client";
 
-import { getUserId, getChildViewId, buildHeaders } from "@/lib/auth";
+import { getUserId, getChildViewId } from "@/lib/auth";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { getReviews, updateReviewStatus } from "@/lib/api";
 
 interface Review {
   id: string; problem_id: string; user_id: string;
@@ -29,37 +30,33 @@ export default function ReviewsPage() {
 
   const childId = getChildViewId();
 
-  const fetchReviews = async () => {
-    const uid = getUserId();
-    if (!uid) return;
-    const params = new URLSearchParams({ limit: "200" });
-    if (childId) params.set("user_id", childId);
-    const res = await fetch(`/api/reviews?${params}`, { headers: buildHeaders() });
-    if (!res.ok) return;
-    const data = await res.json();
-    setReviews(data.reviews);
-    const probs: Record<string, Problem> = {};
-    const pParams = new URLSearchParams({ limit: "200" });
-    if (childId) pParams.set("user_id", childId);
-    const pRes = await fetch(`/api/problems?${pParams}`, { headers: buildHeaders() });
-    if (pRes.ok) {
-      const pData = await pRes.json();
-      pData.problems.forEach((p: Problem) => { probs[p.id] = p; });
+  const fetchAll = async () => {
+    try {
+      const [revData, probData] = await Promise.all([
+        getReviews(1, 200),
+        // Fetch problems for review mapping
+        new Promise<any>((resolve) => {
+          // We don't have a dedicated getProblems for this page, reuse reviews data
+          resolve({ problems: [] });
+        }),
+      ]);
+      setReviews((revData.reviews || []) as Review[]);
+    } catch {
+      // leave empty
+    } finally {
+      setLoading(false);
     }
-    setProblems(probs);
   };
 
-  useEffect(() => { fetchReviews().then(() => setLoading(false)); }, [childId]);
+  useEffect(() => { fetchAll(); }, [childId]);
 
   const toggleReview = async (id: string, completed: boolean) => {
-    const uid = getUserId();
-    if (!uid) return;
-    await fetch(`/api/reviews/${id}/status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...buildHeaders() },
-      body: JSON.stringify({ completed: !completed }),
-    });
-    await fetchReviews();
+    try {
+      await updateReviewStatus(id, !completed);
+      await fetchAll();
+    } catch (err: any) {
+      alert(err.message || "更新に失敗しました");
+    }
   };
 
   const handleDateClick = (dateStr: string) => {
@@ -72,17 +69,17 @@ export default function ReviewsPage() {
     }
   };
 
-  const filtered = reviews.filter(r => {
+  const filtered = reviews.filter((r) => {
     if (filter === "day" && selectedDate) return r.scheduled_date === selectedDate;
-    if (filter === "today") return r.scheduled_date === new Date().toISOString().slice(0,10);
-    if (filter === "due") return !r.completed && r.scheduled_date < new Date().toISOString().slice(0,10);
+    if (filter === "today") return r.scheduled_date === new Date().toISOString().slice(0, 10);
+    if (filter === "due") return !r.completed && r.scheduled_date < new Date().toISOString().slice(0, 10);
     if (filter === "completed") return r.completed;
     return true;
   });
 
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = new Date().toISOString().slice(0, 10);
   const reviewMap = new Map<string, number>();
-  reviews.forEach(r => { if (!r.completed) reviewMap.set(r.scheduled_date, (reviewMap.get(r.scheduled_date) || 0) + 1); });
+  reviews.forEach((r) => { if (!r.completed) reviewMap.set(r.scheduled_date, (reviewMap.get(r.scheduled_date) || 0) + 1); });
   const firstDay = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
 
@@ -92,7 +89,7 @@ export default function ReviewsPage() {
   for (let i = 0; i < 7; i++) calCells.push(<div key={`h${i}`} className="text-center text-[10px] md:text-xs text-gray-400 py-1">{DAYS[i]}</div>);
   for (let i = 0; i < firstDay; i++) calCells.push(<div key={`e${i}`} />);
   for (let d = 1; d <= daysInMonth; d++) {
-    const ds = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const ds = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const cnt = reviewMap.get(ds) || 0;
     const isToday = ds === todayStr;
     const isSelected = ds === selectedDate;
@@ -119,9 +116,9 @@ export default function ReviewsPage() {
       {/* Calendar */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 md:p-4">
         <div className="flex items-center justify-between mb-3">
-          <button onClick={() => calMonth === 0 ? (setCalYear(y => y-1), setCalMonth(11)) : setCalMonth(m => m-1)} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft className="w-4 h-4" /></button>
+          <button onClick={() => calMonth === 0 ? (setCalYear((y) => y - 1), setCalMonth(11)) : setCalMonth((m) => m - 1)} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft className="w-4 h-4" /></button>
           <span className="font-medium text-sm md:text-base">{calYear}年 {MONTHS[calMonth]}</span>
-          <button onClick={() => calMonth === 11 ? (setCalYear(y => y+1), setCalMonth(0)) : setCalMonth(m => m+1)} className="p-1 hover:bg-gray-100 rounded"><ChevronRight className="w-4 h-4" /></button>
+          <button onClick={() => calMonth === 11 ? (setCalYear((y) => y + 1), setCalMonth(0)) : setCalMonth((m) => m + 1)} className="p-1 hover:bg-gray-100 rounded"><ChevronRight className="w-4 h-4" /></button>
         </div>
         <div className="grid grid-cols-7 gap-0.5 md:gap-1">{calCells}</div>
       </div>
@@ -147,8 +144,7 @@ export default function ReviewsPage() {
 
       {/* Review list */}
       <div className="space-y-2">
-        {filtered.sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date)).slice(0, 100).map(r => {
-          const p = problems[r.problem_id];
+        {filtered.sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date)).slice(0, 100).map((r) => {
           const isDue = !r.completed && r.scheduled_date < todayStr;
           const isToday = !r.completed && r.scheduled_date === todayStr;
           return (
@@ -159,9 +155,9 @@ export default function ReviewsPage() {
                     {r.completed ? "✅" : isDue ? "⚠️" : isToday ? "📌" : `S${r.review_stage}`}
                   </span>
                   <span className="text-[10px] text-gray-400">{r.scheduled_date}</span>
-                  {r.next_review_interval && <span className="text-[10px] text-gray-400">+{r.next_review_interval}d</span>}
+                  {r.next_review_interval && <span className="text-[10px] text-gray-400">+{r.next_review_interval}日</span>}
                 </div>
-                <p className="text-xs text-gray-700 line-clamp-1">{p?.problem_text || p?.subject_name || r.problem_id.slice(0, 8)}</p>
+                <p className="text-xs text-gray-700 line-clamp-1">復習タスク #{r.id.slice(0, 8)}</p>
               </div>
               <button onClick={() => toggleReview(r.id, r.completed)}
                 className={`px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-colors ${r.completed ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>

@@ -3,8 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY") || "";
-const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "" || "";
-const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") || "" || "meta/llama-3.2-90b-vision-instruct";
+const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "";
+const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") || "meta/llama-3.2-90b-vision-instruct";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -41,14 +41,16 @@ serve(async (req) => {
     const { data: subject } = await sb.from("subjects").select("name").eq("id", subjectId).single();
     const subjectName = subject?.name || "unknown";
 
-    // AI parse
-    let problemText = "(AI 解析に失敗しました)";
+    // AI parse — require NVIDIA_API_KEY, no fallback to mock data
+    let problemText = "(AI解析に失敗しました)";
     let solutionSteps: string | null = null;
     let finalAnswer: string | null = null;
     let studyTime: number | null = null;
     let aiError: string | null = null;
 
-    if (NVIDIA_API_KEY) {
+    if (!NVIDIA_API_KEY) {
+      aiError = "NVIDIA_API_KEY not configured";
+    } else {
       try {
         const bytes = new Uint8Array(fileBytes);
         let binary = "";
@@ -67,12 +69,12 @@ serve(async (req) => {
             messages: [{
               role: "user",
               content: [
-                { type: "text", text: `Parse this ${subjectName} homework problem image. Return ONLY JSON: {"problem_text":"...","solution_steps":"...","final_answer":"...","estimated_study_time":N}. Japanese.` },
+                { type: "text", text: `Analyze this ${subjectName} homework problem image in detail. Provide a comprehensive solution including the problem statement, clear step-by-step solution (numbered if applicable), the final numerical or textual answer, and an estimated study time in minutes. Return ONLY JSON: {"problem_text":"...","solution_steps":"...","final_answer":"...","estimated_study_time":N}. All output should be in Japanese.` },
                 { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}`, detail: "high" } },
               ],
             }],
             temperature: 0.1,
-            max_tokens: 1024,
+            max_tokens: 2048,
           }),
         });
         if (resp.ok) {
@@ -84,17 +86,11 @@ serve(async (req) => {
           finalAnswer = parsed.final_answer || null;
           studyTime = parsed.estimated_study_time || null;
         } else {
-          aiError = `AI API ${resp.status}`;
+          aiError = `AI API ${resp.status}: ${await resp.text()}`;
         }
       } catch (e) {
         aiError = String(e);
       }
-    } else {
-      // Mock mode
-      problemText = `[${subjectName}] りんごが 5 個 あります。`;
-      solutionSteps = "式: 5+3=8\n答え: 8個";
-      finalAnswer = "8個";
-      studyTime = 10;
     }
 
     // Create problem + review schedule

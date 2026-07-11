@@ -3,9 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, Search, Loader2, Trash2, X } from "lucide-react";
+import { getChildViewId, clearAuth } from "@/lib/auth";
 import {
-  getUserId, getChildViewId, buildHeaders, clearAuth,
-} from "@/lib/auth";
+  getProblems,
+  getSubjects,
+  uploadProblem,
+  deleteProblem,
+} from "@/lib/api";
 import { SkeletonCard, SkeletonStats } from "@/components/Skeletons";
 
 interface Subject { id: number; name: string; icon: string; }
@@ -18,8 +22,6 @@ interface Problem {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [userId, setUserId] = useState<string | null>(null);
-  const [role, setRole] = useState("student");
   const [problems, setProblems] = useState<Problem[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +39,23 @@ export default function DashboardPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const loadData = useCallback(async () => {
+    try {
+      const [subData, probData] = await Promise.all([
+        getSubjects(),
+        getProblems(1, 100),
+      ]);
+      setSubjects(Array.isArray(subData) ? subData : []);
+      setProblems((probData.problems || []) as Problem[]);
+    } catch {
+      // Network error — leave empty
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     setSelectedFile(file);
@@ -53,84 +72,52 @@ export default function DashboardPage() {
     setPreviewUrl(null);
   };
 
-  const fetchProblems = useCallback(async () => {
-    const params = new URLSearchParams({ limit: "100" });
-    if (childViewId) params.set("user_id", childViewId);
-    const res = await fetch(`/api/problems?${params}`, { headers: buildHeaders() });
-    if (res.ok) setProblems((await res.json()).problems);
-  }, [childViewId]);
-
-  useEffect(() => {
-    const init = async () => {
-      const uid = getUserId();
-      if (!uid) { router.push("/login"); return; }
-      setUserId(uid);
-      try {
-        const pRes = await fetch(`/api/profiles/me`, { headers: buildHeaders() });
-        if (pRes.ok) setRole((await pRes.json()).role || "student");
-      } catch {}
-      const [subRes] = await Promise.all([
-        fetch(`/api/subjects`),
-        fetchProblems(),
-      ]);
-      const subData = await subRes.json();
-      setSubjects(Array.isArray(subData) ? subData : []);
-      setLoading(false);
-    };
-    init();
-  }, [fetchProblems, router]);
-
   const handleUpload = async () => {
-    if (!selectedFile || !userId) return;
+    if (!selectedFile) return;
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", selectedFile);
-    fd.append("subject_id", String(selectedSubject));
     try {
-      const res = await fetch(`/api/upload`, { method: "POST", headers: buildHeaders(), body: fd });
-      if (!res.ok) {
-        show("アップロード失敗");
-        return;
-      }
-      const wasAsync = (await res.json()).processing;
-      show(wasAsync ? "⏳ AI解析中...1-2分で反映されます" : "✅ 完了");
+      const result = await uploadProblem(selectedFile, selectedSubject);
+      show("✅ アップロード完了");
       clearFile();
-      await fetchProblems();
-      if (wasAsync) startPollingForNew();
-    } finally { setUploading(false); }
+      await loadData();
+    } catch (err: any) {
+      show(err.message || "アップロード失敗");
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const startPollingForNew = () => {
-    let tries = 0;
-    const interval = setInterval(async () => {
-      tries++;
-      await fetchProblems();
-      if (tries >= 10) clearInterval(interval);
-    }, 5000);
-  };
-
-  const deleteProblem = async (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("削除しますか？")) return;
-    await fetch(`/api/problems/${id}`, { method: "DELETE", headers: buildHeaders() });
-    await fetchProblems();
+    try {
+      await deleteProblem(id);
+      await loadData();
+    } catch (err: any) {
+      show(err.message || "削除失敗");
+    }
   };
 
-  const filtered = problems.filter(p =>
+  const filtered = problems.filter((p) =>
     (subjectFilter === null || p.subject_id === subjectFilter) &&
     (!searchQuery || p.problem_text.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const dueCount = problems.filter(p => p.latest_review && !p.latest_review.completed &&
-    p.latest_review.scheduled_date < new Date().toISOString().slice(0,10)).length;
+  const dueCount = problems.filter((p) =>
+    p.latest_review && !p.latest_review.completed &&
+    p.latest_review.scheduled_date < new Date().toISOString().slice(0, 10)
+  ).length;
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto p-3 md:p-4 space-y-4 md:space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-lg md:text-2xl font-bold">📚 学習記録</h1>
         <button onClick={() => { clearAuth(); router.push("/login"); }} className="text-xs md:text-sm text-gray-400 hover:text-red-500">
@@ -138,6 +125,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      {/* Upload area (only for own view) */}
       {!childViewId && (
         <div className="bg-white rounded-xl border-2 border-dashed border-blue-200 p-3 md:p-4">
           <div className="flex flex-col sm:flex-row gap-2 md:gap-3">
@@ -147,21 +135,27 @@ export default function DashboardPage() {
               onChange={handleFileChange}
               className="text-xs file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
             />
-            <select value={selectedSubject} onChange={e => setSelectedSubject(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs md:text-sm">
-              {subjects.map(s => <option key={s.id} value={s.id}>{s.icon} {s.name}</option>)}
+            <select
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(Number(e.target.value))}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs md:text-sm"
+            >
+              {subjects.map((s) => (
+                <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+              ))}
             </select>
-            <button onClick={handleUpload} disabled={uploading || !selectedFile} className="bg-blue-600 text-white rounded-lg px-3 py-1.5 text-xs md:text-sm hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
+            <button
+              onClick={handleUpload}
+              disabled={uploading || !selectedFile}
+              className="bg-blue-600 text-white rounded-lg px-3 py-1.5 text-xs md:text-sm hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+            >
               {uploading ? "解析中..." : "アップロード"}
             </button>
           </div>
-          {/* Image preview */}
           {previewUrl && (
             <div className="relative mt-3 inline-block">
               <img src={previewUrl} alt="Preview" className="h-32 w-auto rounded-lg border border-gray-200 object-cover" />
-              <button
-                onClick={clearFile}
-                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600"
-              >
+              <button onClick={clearFile} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -176,13 +170,14 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Stats */}
       <div className="grid grid-cols-4 gap-2">
         {[
           { l: "学習", v: problems.length },
           { l: "超過", v: dueCount },
-          { l: "完了", v: problems.filter(p => p.latest_review?.completed).length },
-          { l: "新規", v: problems.filter(p => !p.latest_review).length },
-        ].map(x => (
+          { l: "完了", v: problems.filter((p) => p.latest_review?.completed).length },
+          { l: "新規", v: problems.filter((p) => !p.latest_review).length },
+        ].map((x) => (
           <div key={x.l} className="bg-white border border-gray-200 rounded-xl p-2 md:p-3 text-center">
             <div className="text-lg md:text-2xl font-bold">{x.v}</div>
             <div className="text-[10px] md:text-xs text-gray-400">{x.l}</div>
@@ -190,22 +185,43 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* Subject filter */}
       <div className="flex gap-1.5 overflow-x-auto flex-wrap">
-        <button onClick={() => setSubjectFilter(null)} className={`px-2 md:px-3 py-1 rounded-full text-[10px] md:text-xs ${subjectFilter === null ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600"}`}>すべて</button>
-        {subjects.map(s => (
-          <button key={s.id} onClick={() => setSubjectFilter(s.id === subjectFilter ? null : s.id)}
-            className={`px-2 md:px-3 py-1 rounded-full text-[10px] md:text-xs ${subjectFilter === s.id ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600"}`}>{s.icon} {s.name}</button>
+        <button
+          onClick={() => setSubjectFilter(null)}
+          className={`px-2 md:px-3 py-1 rounded-full text-[10px] md:text-xs ${subjectFilter === null ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600"}`}
+        >
+          すべて
+        </button>
+        {subjects.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSubjectFilter(s.id === subjectFilter ? null : s.id)}
+            className={`px-2 md:px-3 py-1 rounded-full text-[10px] md:text-xs ${subjectFilter === s.id ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600"}`}
+          >
+            {s.icon} {s.name}
+          </button>
         ))}
       </div>
 
+      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm" placeholder="問題を検索..." />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="問題を検索..."
+        />
       </div>
 
+      {/* Problem list */}
       <div className="grid grid-cols-1 gap-3">
-        {filtered.map(p => (
-          <div key={p.id} className="bg-white p-3 md:p-4 rounded-xl border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
+        {filtered.map((p) => (
+          <div
+            key={p.id}
+            className="bg-white p-3 md:p-4 rounded-xl border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0" onClick={() => router.push(`/problems/${p.id}`)}>
                 <div className="text-[10px] md:text-xs text-gray-400 mb-1">
@@ -215,17 +231,21 @@ export default function DashboardPage() {
                 {p.memo && <p className="text-[10px] md:text-xs text-yellow-600 mt-1 truncate">📝 {p.memo}</p>}
               </div>
               <div className="flex flex-col items-end gap-1 shrink-0">
-                <button onClick={(e) => { e.stopPropagation(); deleteProblem(p.id); }} className="text-gray-300 hover:text-red-500">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
+                  className="text-gray-300 hover:text-red-500"
+                >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
                 {p.latest_review && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${p.latest_review.completed ? "bg-green-100 text-green-700" : p.latest_review.scheduled_date < new Date().toISOString().slice(0,10) ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
-                    {p.latest_review.completed ? "✅" : p.latest_review.scheduled_date < new Date().toISOString().slice(0,10) ? "⚠️" : `S${p.latest_review.review_stage}`}
-                  </span>
-                )}
-                {(p as any).processing && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700 animate-pulse">
-                    ⏳解析中
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    p.latest_review.completed ? "bg-green-100 text-green-700"
+                    : p.latest_review.scheduled_date < new Date().toISOString().slice(0, 10) ? "bg-red-100 text-red-700"
+                    : "bg-blue-100 text-blue-700"
+                  }`}>
+                    {p.latest_review.completed ? "✅"
+                    : p.latest_review.scheduled_date < new Date().toISOString().slice(0, 10) ? "⚠️"
+                    : `S${p.latest_review.review_stage}`}
                   </span>
                 )}
                 <span className="text-[10px] text-blue-500">→</span>

@@ -31,9 +31,8 @@ export default function SignupPage() {
       if (authError) throw authError;
       if (!data.user) throw new Error("User creation failed");
 
-      // 2. Create Profile in public.profiles via FastAPI
-      // We call our backend to ensure the profile is created with the correct role
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "/api"}/auth/register`, {
+      // 2. Create Profile via Supabase Edge Function (auth function)
+      const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

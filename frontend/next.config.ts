@@ -4,7 +4,6 @@ import type { NextConfig } from "next";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wamljmirzqviipsomjyu.supabase.co";
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["192.168.3.236"],
   async rewrites() {
     return [
       {

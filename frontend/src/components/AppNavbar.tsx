@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { buildHeaders, getUserId, getChildViewId, setChildViewId, clearAuth } from "@/lib/auth";
 import { BookOpen, Calendar, Settings, LayoutDashboard, Users, LogOut, BarChart3 } from "lucide-react";
+import { getProfile, getParentChildren } from "@/lib/api";
 
 interface ChildSummary {
   child_id: string;
@@ -23,14 +24,12 @@ export default function AppNavbar() {
   useEffect(() => {
     const uid = getUserId();
     if (!uid) return;
-    fetch(`/api/profiles/me`, { headers: buildHeaders() })
-      .then(r => r.json())
-      .then(p => { setRole(p.role || "student"); })
-      .catch(() => {});
-    fetch(`/api/parent/children`, { headers: buildHeaders() })
-      .then(r => r.json())
-      .then(d => setChildren(d.children || []))
-      .catch(() => {});
+
+    Promise.allSettled([
+      getProfile().then((p: any) => setRole(p.role || "student")),
+      getParentChildren().then((d: any) => setChildren(d.children || [])),
+    ]).catch(() => {});
+
     setChildViewIdLocal(getChildViewId());
   }, []);
 
@@ -39,7 +38,7 @@ export default function AppNavbar() {
     setChildViewId(childId);
     router.push("/dashboard");
   };
-  
+
   const exitChildView = () => {
     setChildViewIdLocal(null);
     setChildViewId(null);
@@ -70,11 +69,11 @@ export default function AppNavbar() {
             )}
             <select
               className="text-[10px] md:text-xs border border-gray-200 rounded-lg px-1.5 py-1"
-              onChange={e => { if (e.target.value) switchChild(e.target.value); }}
+              onChange={(e) => { if (e.target.value) switchChild(e.target.value); }}
               value=""
             >
               <option value="">👶 子供選択</option>
-              {children.map(c => (
+              {children.map((c) => (
                 <option key={c.child_id} value={c.child_id}>
                   {c.child_name} ({c.completion_rate > 0 ? Math.round(c.completion_rate * 100) + "%" : "0%"})
                 </option>
@@ -84,47 +83,36 @@ export default function AppNavbar() {
         )}
 
         <div className="flex items-center gap-0.5 md:gap-1">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/dashboard") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-          >
+          <button onClick={() => router.push("/dashboard")}
+            className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/dashboard") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}>
             <LayoutDashboard className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">学習</span>
           </button>
-          <button
-            onClick={() => router.push("/reviews")}
-            className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/reviews") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-          >
+          <button onClick={() => router.push("/reviews")}
+            className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/reviews") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}>
             <Calendar className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">復習</span>
           </button>
           {role === "parent" && (
-            <button
-              onClick={() => router.push("/parent")}
-              className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/parent") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-            >
+            <button onClick={() => router.push("/parent")}
+              className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/parent") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}>
               <BarChart3 className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">概況</span>
             </button>
           )}
-          <button
-            onClick={() => router.push("/settings")}
-            className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/settings") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-          >
+          <button onClick={() => router.push("/settings")}
+            className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/settings") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}>
             <Settings className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">設定</span>
           </button>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-gray-400 hover:text-red-500 transition-colors"
-          >
+          <button onClick={handleLogout} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-gray-400 hover:text-red-500 transition-colors">
             <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
       {childViewId && (
         <div className="bg-yellow-50 border-b border-yellow-200 text-center py-1 text-[10px] md:text-xs text-yellow-700">
-          {children.find(c => c.child_id === childViewId)?.child_name} さんのデータを表示中
+          {children.find((c) => c.child_id === childViewId)?.child_name} さんのデータを表示中
         </div>
       )}
     </nav>
