@@ -95,7 +95,7 @@ export async function getProblems(page = 1, limit = 20, subjectId?: number) {
 
   const res = await api(`/problems?${params}`);
   if (!res.ok) throw new Error("Failed to get problems");
-  return res.json();
+  return res.json() as Promise<{ problems: Problem[]; total: number; page: number; limit: number; user_name?: string | null }>;
 }
 
 export async function getProblemById(id: string) {

@@ -10,6 +10,21 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+async function getProblemOwner(sb: any, pid: string): Promise<string | null> {
+  const { data } = await sb.from("problems").select("user_id").eq("id", pid).single();
+  return data?.user_id || null;
+}
+
+async function isOwnerOrParent(sb: any, userId: string, problemUserId: string): Promise<boolean> {
+  if (problemUserId === userId) return true;
+  const { data: link } = await sb.from("parent_child")
+    .select("*")
+    .eq("parent_id", userId)
+    .eq("child_id", problemUserId)
+    .maybeSingle();
+  return !!link;
+}
+
 serve(async (req: Request) => {
   // DEBUG_MARKER_12345 - Deployed at 2026-07-11 22:56:11
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -43,7 +58,13 @@ serve(async (req: Request) => {
         return { ...p, subject_name: (p as any).subjects?.name, latest_review: rev || null };
       }));
 
-      return json({ problems: problemsWithReview, total: count || 0, page, limit });
+      // Include target user's display name for parent view
+      let userName: string | null = null;
+      if (targetUserId !== userId) {
+        const { data: profile } = await sb.from("profiles").select("full_name, username").eq("id", targetUserId).single();
+        userName = profile?.full_name || profile?.username || null;
+      }
+      return json({ problems: problemsWithReview, total: count || 0, page, limit, user_name: userName });
     }
 
     // GET /problems/:id — detail
@@ -52,14 +73,8 @@ serve(async (req: Request) => {
       const { data: problem, error } = await sb.from("problems").select("*, subjects(name)").eq("id", pid).single();
       if (error || !problem) return json({ error: "Not found" }, 404);
 
-      // Allow owner or parent
-      if (problem.user_id !== userId) {
-        const { data: parentLink } = await sb.from("parent_child")
-          .select("*")
-          .eq("parent_id", userId)
-          .eq("child_id", problem.user_id)
-          .maybeSingle();
-        if (!parentLink) return json({ error: "Not your problem" }, 403);
+      if (!(await isOwnerOrParent(sb, userId, problem.user_id))) {
+        return json({ error: "Not your problem" }, 403);
       }
 
       const { data: reviews } = await sb.from("review_schedules").select("*").eq("problem_id", pid).order("scheduled_date");
@@ -76,8 +91,12 @@ serve(async (req: Request) => {
     // PATCH /problems/:id/memo
     if (req.method === "PATCH" && segments.length === 2 && segments[1] === "memo") {
       const pid = segments[0];
+      const ownerId = await getProblemOwner(sb, pid);
+      if (!ownerId) return json({ error: "Not found" }, 404);
+      if (!(await isOwnerOrParent(sb, userId, ownerId))) return json({ error: "Not your problem" }, 403);
+
       const body = await req.json();
-      const { error } = await sb.from("problems").update({ memo: body.memo }).eq("id", pid).eq("user_id", userId);
+      const { error } = await sb.from("problems").update({ memo: body.memo }).eq("id", pid);
       if (error) return json({ error: error.message }, 500);
       return json({ ok: true });
     }
@@ -85,10 +104,13 @@ serve(async (req: Request) => {
     // DELETE /problems/:id
     if (req.method === "DELETE" && segments.length === 1) {
       const pid = segments[0];
-      // Delete related records first (cascade should handle this, but be explicit for safety)
+      const ownerId = await getProblemOwner(sb, pid);
+      if (!ownerId) return json({ error: "Not found" }, 404);
+      if (!(await isOwnerOrParent(sb, userId, ownerId))) return json({ error: "Not your problem" }, 403);
+
       await sb.from("manual_reviews").delete().eq("problem_id", pid);
       await sb.from("review_schedules").delete().eq("problem_id", pid);
-      const { error } = await sb.from("problems").delete().eq("id", pid).eq("user_id", userId);
+      const { error } = await sb.from("problems").delete().eq("id", pid);
       if (error) return json({ error: error.message }, 500);
       return new Response(null, { status: 204, headers: CORS });
     }
@@ -96,9 +118,13 @@ serve(async (req: Request) => {
     // POST /problems/:id/manual-reviews
     if (req.method === "POST" && segments.length === 2 && segments[1] === "manual-reviews") {
       const pid = segments[0];
+      const ownerId = await getProblemOwner(sb, pid);
+      if (!ownerId) return json({ error: "Not found" }, 404);
+      if (!(await isOwnerOrParent(sb, userId, ownerId))) return json({ error: "Not your problem" }, 403);
+
       const body = await req.json();
       const { data } = await sb.from("manual_reviews").insert({
-        problem_id: pid, user_id: userId,
+        problem_id: pid, user_id: ownerId,
         scheduled_date: body.scheduled_date, note: body.note || null,
       }).select().single();
       return json(data, 201);

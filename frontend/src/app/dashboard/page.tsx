@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [selectedSubject, setSelectedSubject] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [viewingChildName, setViewingChildName] = useState<string | null>(null);
 
   const childViewId = getChildViewId();
   const show = (msg: string) => {
@@ -47,6 +48,7 @@ export default function DashboardPage() {
       ]);
       setSubjects(Array.isArray(subData) ? subData : []);
       setProblems((probData.problems || []) as Problem[]);
+      setViewingChildName(probData.user_name || null);
     } catch {
       // Network error — leave empty
     } finally {
@@ -119,7 +121,10 @@ export default function DashboardPage() {
     <div className="max-w-5xl mx-auto p-3 md:p-4 space-y-4 md:space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-lg md:text-2xl font-bold">📚 学習記録</h1>
+        <h1 className="text-lg md:text-2xl font-bold">
+          📚 学習記録
+          {viewingChildName && <span className="ml-2 text-sm font-normal text-gray-500">({viewingChildName})</span>}
+        </h1>
         <button onClick={() => { clearAuth(); router.push("/login"); }} className="text-xs md:text-sm text-gray-400 hover:text-red-500">
           ログアウト
         </button>
