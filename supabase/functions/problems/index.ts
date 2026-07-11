@@ -10,17 +10,25 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-serve(async (req) => {
+  serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const sb = createClient(SB_URL, SB_KEY);
   const url = new URL(req.url);
-  const path = url.pathname.split("/functions/v1/problems")[1]?.replace(/^\//, "") || "";
+  
+  // Robust path parsing: extract everything after /functions/v1/problems
+  const prefix = "/functions/v1/problems";
+  let relativePath = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : "";
+  // Remove leading/trailing slashes and query params
+  relativePath = relativePath.replace(/^\/+|\/+$/g, "").split("?")[0];
+  // Split into segments for routing
+  const segments = relativePath.split("/").filter(Boolean);
+  
   const userId = req.headers.get("X-User-Id") || "";
   if (!userId) return json({ error: "X-User-Id required" }, 401);
 
   try {
     // GET /problems — list
-    if (req.method === "GET" && !path) {
+    if (req.method === "GET" && segments.length === 0) {
       const page = parseInt(url.searchParams.get("page") || "1");
       const limit = parseInt(url.searchParams.get("limit") || "20");
       const subjectId = url.searchParams.get("subject_id");
@@ -40,10 +48,9 @@ serve(async (req) => {
       return json({ problems: problemsWithReview, total: count || 0, page, limit });
     }
 
-    // GET /problems/:id — detail
-    const detailMatch = path.match(/^([^/]+)$/);
-    if (req.method === "GET" && detailMatch) {
-      const pid = detailMatch[1];
+    // GET /problems/:id — detail (single segment)
+    if (req.method === "GET" && segments.length === 1) {
+      const pid = segments[0];
       const { data: problem, error } = await sb.from("problems").select("*, subjects(name)").eq("id", pid).single();
       if (error || !problem) return json({ error: "Not found" }, 404);
       if (problem.user_id !== userId) return json({ error: "Not your problem" }, 403);
@@ -59,28 +66,25 @@ serve(async (req) => {
       });
     }
 
-    // PATCH /problems/:id — update memo
-    const patchMatch = path.match(/^([^/]+)$/);
-    if (req.method === "PATCH" && patchMatch) {
-      const pid = patchMatch[1];
+    // PATCH /problems/:id/memo — update memo (two segments, second is "memo")
+    if (req.method === "PATCH" && segments.length === 2 && segments[1] === "memo") {
+      const pid = segments[0];
       const body = await req.json();
       const { error } = await sb.from("problems").update({ memo: body.memo }).eq("id", pid).eq("user_id", userId);
       if (error) return json({ error: error.message }, 500);
       return json({ ok: true });
     }
 
-    // DELETE /problems/:id
-    const delMatch = path.match(/^([^/]+)$/);
-    if (req.method === "DELETE" && delMatch) {
-      const pid = delMatch[1];
+    // DELETE /problems/:id — delete problem (single segment, DELETE method)
+    if (req.method === "DELETE" && segments.length === 1) {
+      const pid = segments[0];
       await sb.from("problems").delete().eq("id", pid).eq("user_id", userId);
       return new Response(null, { status: 204, headers: CORS });
     }
 
     // POST /problems/:id/manual-reviews
-    const manualMatch = path.match(/^([^/]+)\/manual-reviews$/);
-    if (req.method === "POST" && manualMatch) {
-      const pid = manualMatch[1];
+    if (req.method === "POST" && segments.length === 2 && segments[1] === "manual-reviews") {
+      const pid = segments[0];
       const body = await req.json();
       const { data } = await sb.from("manual_reviews").insert({
         problem_id: pid, user_id: userId,
