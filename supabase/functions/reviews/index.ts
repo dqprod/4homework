@@ -56,7 +56,15 @@ serve(async (req) => {
 
       const { data: review, error: fetchError } = await sb.from("review_schedules").select("*").eq("id", rid).single();
       if (fetchError || !review) return json({ error: "Not found" }, 404);
-      if (review.user_id !== userId) return json({ error: "Not your review" }, 403);
+      // Allow owner or parent
+      if (review.user_id !== userId) {
+        const { data: parentLink } = await sb.from("parent_child")
+          .select("*")
+          .eq("parent_id", userId)
+          .eq("child_id", review.user_id)
+          .maybeSingle();
+        if (!parentLink) return json({ error: "Not your review" }, 403);
+      }
 
       if (body.completed) {
         const adv = advanceStage(review.review_stage);

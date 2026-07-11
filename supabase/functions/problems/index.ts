@@ -51,7 +51,16 @@ serve(async (req: Request) => {
       const pid = segments[0];
       const { data: problem, error } = await sb.from("problems").select("*, subjects(name)").eq("id", pid).single();
       if (error || !problem) return json({ error: "Not found" }, 404);
-      if (problem.user_id !== userId) return json({ error: "Not your problem" }, 403);
+
+      // Allow owner or parent
+      if (problem.user_id !== userId) {
+        const { data: parentLink } = await sb.from("parent_child")
+          .select("*")
+          .eq("parent_id", userId)
+          .eq("child_id", problem.user_id)
+          .maybeSingle();
+        if (!parentLink) return json({ error: "Not your problem" }, 403);
+      }
 
       const { data: reviews } = await sb.from("review_schedules").select("*").eq("problem_id", pid).order("scheduled_date");
       const { data: manualReviews } = await sb.from("manual_reviews").select("*").eq("problem_id", pid).order("scheduled_date");
@@ -76,7 +85,11 @@ serve(async (req: Request) => {
     // DELETE /problems/:id
     if (req.method === "DELETE" && segments.length === 1) {
       const pid = segments[0];
-      await sb.from("problems").delete().eq("id", pid).eq("user_id", userId);
+      // Delete related records first (cascade should handle this, but be explicit for safety)
+      await sb.from("manual_reviews").delete().eq("problem_id", pid);
+      await sb.from("review_schedules").delete().eq("problem_id", pid);
+      const { error } = await sb.from("problems").delete().eq("id", pid).eq("user_id", userId);
+      if (error) return json({ error: error.message }, 500);
       return new Response(null, { status: 204, headers: CORS });
     }
 

@@ -61,6 +61,7 @@ export default function ProblemDetailPage() {
 
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [editingMemo, setEditingMemo] = useState(false);
   const [memoDraft, setMemoDraft] = useState("");
   const [manualDate, setManualDate] = useState("");
@@ -74,9 +75,11 @@ export default function ProblemDetailPage() {
       const data = await getProblemById(id);
       setProblem(data);
       setMemoDraft(data?.memo || "");
+      setFetchError(null);
       setLoading(false);
-    } catch {
+    } catch (err: any) {
       setProblem(null);
+      setFetchError(err?.message || "問題の読み込みに失敗しました");
       setLoading(false);
     }
   }, [id]);
@@ -150,7 +153,7 @@ export default function ProblemDetailPage() {
   if (!problem) {
     return (
       <div className="max-w-3xl mx-auto p-6 text-center">
-        <p className="text-gray-500">問題が見つかりません</p>
+        <p className="text-gray-500">{fetchError || "問題が見つかりません"}</p>
         <button onClick={() => router.push("/dashboard")} className="mt-4 text-sm text-blue-600">← 戻る</button>
       </div>
     );

@@ -113,7 +113,7 @@ export async function deleteProblem(id: string) {
 }
 
 export async function updateProblemMemo(id: string, memo: string) {
-  const res = await api(`/problems/${id}`, {
+  const res = await api(`/problems/${id}/memo`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ memo }),
