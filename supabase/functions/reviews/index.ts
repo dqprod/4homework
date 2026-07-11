@@ -49,7 +49,7 @@ serve(async (req) => {
     }
 
     // PUT /reviews/:id/status
-    const statusMatch = path.match(/^([a-f0-9-]+)\/status$/);
+    const statusMatch = path.match(/^([^/]+)\/status$/);
     if (req.method === "PUT" && statusMatch) {
       const rid = statusMatch[1];
       const body = await req.json();
@@ -89,7 +89,7 @@ serve(async (req) => {
     }
 
     // POST /reviews/:id/feedback
-    const feedbackMatch = path.match(/^([a-f0-9-]+)\/feedback$/);
+    const feedbackMatch = path.match(/^([^/]+)\/feedback$/);
     if (req.method === "POST" && feedbackMatch) {
       const rid = feedbackMatch[1];
       const body = await req.json();

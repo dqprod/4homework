@@ -70,7 +70,7 @@ export default function AppNavbar() {
             <select
               className="text-[10px] md:text-xs border border-gray-200 rounded-lg px-1.5 py-1"
               onChange={(e) => { if (e.target.value) switchChild(e.target.value); }}
-              value=""
+              value={childViewId || ""}
             >
               <option value="">👶 子供選択</option>
               {children.map((c) => (

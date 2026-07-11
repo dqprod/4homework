@@ -41,7 +41,7 @@ serve(async (req) => {
     }
 
     // GET /problems/:id — detail
-    const detailMatch = path.match(/^([a-f0-9-]+)$/);
+    const detailMatch = path.match(/^([^/]+)$/);
     if (req.method === "GET" && detailMatch) {
       const pid = detailMatch[1];
       const { data: problem, error } = await sb.from("problems").select("*, subjects(name)").eq("id", pid).single();
@@ -60,7 +60,7 @@ serve(async (req) => {
     }
 
     // PATCH /problems/:id — update memo
-    const patchMatch = path.match(/^([a-f0-9-]+)$/);
+    const patchMatch = path.match(/^([^/]+)$/);
     if (req.method === "PATCH" && patchMatch) {
       const pid = patchMatch[1];
       const body = await req.json();
@@ -70,7 +70,7 @@ serve(async (req) => {
     }
 
     // DELETE /problems/:id
-    const delMatch = path.match(/^([a-f0-9-]+)$/);
+    const delMatch = path.match(/^([^/]+)$/);
     if (req.method === "DELETE" && delMatch) {
       const pid = delMatch[1];
       await sb.from("problems").delete().eq("id", pid).eq("user_id", userId);
@@ -78,7 +78,7 @@ serve(async (req) => {
     }
 
     // POST /problems/:id/manual-reviews
-    const manualMatch = path.match(/^([a-f0-9-]+)\/manual-reviews$/);
+    const manualMatch = path.match(/^([^/]+)\/manual-reviews$/);
     if (req.method === "POST" && manualMatch) {
       const pid = manualMatch[1];
       const body = await req.json();
