@@ -10,17 +10,15 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const sb = createClient(SB_URL, SB_KEY);
   const url = new URL(req.url);
   
-  // Robust path parsing: extract everything after /functions/v1/problems
+  // Extract path after /functions/v1/problems
   const prefix = "/functions/v1/problems";
   let relativePath = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : "";
-  // Remove leading/trailing slashes and query params
   relativePath = relativePath.replace(/^\/+|\/+$/g, "").split("?")[0];
-  // Split into segments for routing
   const segments = relativePath.split("/").filter(Boolean);
   
   const userId = req.headers.get("X-User-Id") || "";
@@ -39,7 +37,6 @@ serve(async (req) => {
       const { data, count, error } = await query.range((page - 1) * limit, page * limit - 1);
       if (error) return json({ error: error.message }, 500);
 
-      // Fetch latest review per problem
       const problemsWithReview = await Promise.all((data || []).map(async (p: any) => {
         const { data: rev } = await sb.from("review_schedules").select("*").eq("problem_id", p.id).order("created_at", { ascending: false }).limit(1).single();
         return { ...p, subject_name: (p as any).subjects?.name, latest_review: rev || null };
@@ -48,7 +45,7 @@ serve(async (req) => {
       return json({ problems: problemsWithReview, total: count || 0, page, limit });
     }
 
-    // GET /problems/:id — detail (single segment)
+    // GET /problems/:id — detail
     if (req.method === "GET" && segments.length === 1) {
       const pid = segments[0];
       const { data: problem, error } = await sb.from("problems").select("*, subjects(name)").eq("id", pid).single();
@@ -66,7 +63,7 @@ serve(async (req) => {
       });
     }
 
-    // PATCH /problems/:id/memo — update memo (two segments, second is "memo")
+    // PATCH /problems/:id/memo
     if (req.method === "PATCH" && segments.length === 2 && segments[1] === "memo") {
       const pid = segments[0];
       const body = await req.json();
@@ -75,7 +72,7 @@ serve(async (req) => {
       return json({ ok: true });
     }
 
-    // DELETE /problems/:id — delete problem (single segment, DELETE method)
+    // DELETE /problems/:id
     if (req.method === "DELETE" && segments.length === 1) {
       const pid = segments[0];
       await sb.from("problems").delete().eq("id", pid).eq("user_id", userId);
