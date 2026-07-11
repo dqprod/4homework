@@ -11,6 +11,7 @@ function json(data: unknown, status = 200) {
 }
 
 serve(async (req: Request) => {
+  // DEBUG_MARKER_12345 - Deployed at 2026-07-11 22:56:11
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const sb = createClient(SB_URL, SB_KEY);
   const url = new URL(req.url);
