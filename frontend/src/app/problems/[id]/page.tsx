@@ -28,6 +28,17 @@ interface ManualReview {
   completed: boolean;
 }
 
+interface ProblemItem {
+  id: string;
+  item_number: number;
+  problem_text: string;
+  solution_method: string | null;
+  solution_steps: string | null;
+  knowledge_points: string | null;
+  final_answer: string | null;
+  estimated_study_time: number | null;
+}
+
 interface ProblemDetail {
   id: string;
   subject_name: string;
@@ -36,8 +47,10 @@ interface ProblemDetail {
   solution_steps: string | null;
   final_answer: string | null;
   memo: string | null;
+  estimated_study_time: number | null;
   review_schedules: ReviewSchedule[];
   manual_reviews: ManualReview[];
+  problem_items: ProblemItem[];
 }
 
 function StarRating({ value, onChange, size = "sm" }: { value: number; onChange: (v: number) => void; size?: string }) {
@@ -182,23 +195,71 @@ export default function ProblemDetailPage() {
             <img src={problem.original_image_url} alt="Problem" className="w-full rounded-xl border" />
           )}
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-gray-400 uppercase">問題</label>
-            <p className="text-base md:text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">{problem.problem_text}</p>
-          </div>
+          {/* Problem items */}
+          {problem.problem_items && problem.problem_items.length > 0 ? (
+            <div className="space-y-6">
+              {problem.problem_items.map((item) => (
+                <div key={item.id} className="border border-blue-100 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-blue-600 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
+                      {item.item_number}
+                    </span>
+                    <span className="text-xs font-semibold text-gray-400 uppercase">問題 {item.item_number}</span>
+                  </div>
 
-          {problem.solution_steps && (
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-400 uppercase">解き方</label>
-              <div className="bg-blue-50 p-3 md:p-4 rounded-xl text-sm md:text-base text-gray-700 whitespace-pre-wrap">{problem.solution_steps}</div>
-            </div>
-          )}
+                  <p className="text-base md:text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">{item.problem_text}</p>
 
-          {problem.final_answer && (
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-400 uppercase">答え</label>
-              <p className="text-xl md:text-2xl font-bold text-blue-600">{problem.final_answer}</p>
+                  {item.solution_steps && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-gray-400">解题思路</label>
+                      <div className="bg-blue-50 p-3 rounded-xl text-sm text-gray-700 whitespace-pre-wrap">{item.solution_steps}</div>
+                    </div>
+                  )}
+
+                  {item.solution_method && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-gray-400">解き方・考え方</label>
+                      <div className="bg-green-50 p-3 rounded-xl text-sm text-gray-700 whitespace-pre-wrap">{item.solution_method}</div>
+                    </div>
+                  )}
+
+                  {item.knowledge_points && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-gray-400">知識要点</label>
+                      <div className="bg-yellow-50 p-3 rounded-xl text-sm text-gray-700 whitespace-pre-wrap">{item.knowledge_points}</div>
+                    </div>
+                  )}
+
+                  {item.final_answer && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-gray-400">答え</label>
+                      <p className="text-xl font-bold text-blue-600">{item.final_answer}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
+          ) : (
+            <>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gray-400 uppercase">問題</label>
+                <p className="text-base md:text-lg text-gray-800 leading-relaxed whitespace-pre-wrap">{problem.problem_text}</p>
+              </div>
+
+              {problem.solution_steps && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-400 uppercase">解き方</label>
+                  <div className="bg-blue-50 p-3 md:p-4 rounded-xl text-sm md:text-base text-gray-700 whitespace-pre-wrap">{problem.solution_steps}</div>
+                </div>
+              )}
+
+              {problem.final_answer && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-400 uppercase">答え</label>
+                  <p className="text-xl md:text-2xl font-bold text-blue-600">{problem.final_answer}</p>
+                </div>
+              )}
+            </>
           )}
 
           {/* Memo */}

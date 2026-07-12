@@ -79,12 +79,14 @@ serve(async (req: Request) => {
 
       const { data: reviews } = await sb.from("review_schedules").select("*").eq("problem_id", pid).order("scheduled_date");
       const { data: manualReviews } = await sb.from("manual_reviews").select("*").eq("problem_id", pid).order("scheduled_date");
+      const { data: problemItems } = await sb.from("problem_items").select("*").eq("problem_id", pid).order("item_number");
 
       return json({
         ...problem,
         subject_name: (problem as any).subjects?.name,
         review_schedules: reviews || [],
         manual_reviews: manualReviews || [],
+        problem_items: problemItems || [],
       });
     }
 
@@ -108,6 +110,7 @@ serve(async (req: Request) => {
       if (!ownerId) return json({ error: "Not found" }, 404);
       if (!(await isOwnerOrParent(sb, userId, ownerId))) return json({ error: "Not your problem" }, 403);
 
+      await sb.from("problem_items").delete().eq("problem_id", pid);
       await sb.from("manual_reviews").delete().eq("problem_id", pid);
       await sb.from("review_schedules").delete().eq("problem_id", pid);
       const { error } = await sb.from("problems").delete().eq("id", pid);

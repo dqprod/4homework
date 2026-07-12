@@ -27,31 +27,22 @@ serve(async (req) => {
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...CORS, "Content-Type": "application/json" } });
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  console.log("[upload] received request");
-
   try {
-    console.log("[upload] step 1: parsing formData");
     const formData = await req.formData();
-    console.log("[upload] step 2: formData parsed");
     const file = formData.get("file") as File;
     const subjectId = parseInt(formData.get("subject_id") as string, 10);
     const userId = req.headers.get("X-User-Id") || "";
-    console.log("[upload] step 3: file=" + file?.name + " subjectId=" + subjectId + " userId=" + userId);
 
     if (!file || !subjectId || !userId) {
       return new Response(JSON.stringify({ error: "file, subject_id, and X-User-Id required" }), { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
     // Upload to Storage
-    console.log("[upload] step 4: reading file bytes");
     const fileBytes = await file.arrayBuffer();
-    console.log("[upload] step 5: file size=" + fileBytes.byteLength);
     const fileName = `${userId}/${crypto.randomUUID()}.jpg`;
-    console.log("[upload] step 6: uploading to storage");
     const { error: uploadError } = await sb.storage.from("problems")
       .upload(fileName, new Uint8Array(fileBytes), { contentType: "image/jpeg", upsert: true });
     if (uploadError) return new Response(JSON.stringify({ error: `Upload: ${uploadError.message}` }), { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
-    console.log("[upload] step 7: storage upload done");
 
     const imageUrl = sb.storage.from("problems").getPublicUrl(fileName).data.publicUrl;
 
@@ -60,10 +51,14 @@ serve(async (req) => {
     const subjectName = subject?.name || "unknown";
 
     // AI parse via NVIDIA Vision API
-    let problemText = "";
-    let solutionSteps: string | null = null;
-    let finalAnswer: string | null = null;
-    let studyTime: number | null = null;
+    let aiItems: Array<{
+      problem_text: string;
+      solution_method?: string;
+      solution_steps?: string;
+      knowledge_points?: string;
+      final_answer?: string;
+      estimated_study_time?: number;
+    }> = [];
     let aiError: string | null = null;
 
     if (!NVIDIA_API_KEY) {
@@ -84,25 +79,43 @@ serve(async (req) => {
           messages: [{
             role: "user",
             content: [
-              { type: "text", text: `Analyze this ${subjectName} homework problem image in detail. Provide a comprehensive solution including the problem statement, clear step-by-step solution (numbered if applicable), the final numerical or textual answer, and an estimated study time in minutes. Return ONLY JSON: {"problem_text":"...","solution_steps":"...","final_answer":"...","estimated_study_time":N}. All output should be in Japanese.` },
+              { type: "text", text: `この${subjectName}の宿題の画像を解析してください。画像内の**すべての問題**を漏れなく抽出してください。
+
+各問題について以下を日本語で出力：
+- problem_text: 問題文
+- solution_method: 解き方・考え方（このタイプの問題を解くためのアプローチ）
+- solution_steps: 解题步骤（番号付きで詳細に）
+- knowledge_points: 知識要点（この問題で使う公式や概念）
+- final_answer: 最終的な答え
+- estimated_study_time: 所要時間（分）
+
+画像内に問題が複数ある場合は**必ずすべて**含めてください。
+必ずJSON配列のみを返してください。例：
+[
+  {
+    "problem_text": "...",
+    "solution_method": "...",
+    "solution_steps": "...",
+    "knowledge_points": "...",
+    "final_answer": "...",
+    "estimated_study_time": 5
+  }
+]` },
               { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}`, detail: "high" } },
             ],
           }],
           temperature: 0.1,
-          max_tokens: 2048,
+          max_tokens: 4096,
         }),
       });
 
       if (resp.ok) {
         const result = await resp.json();
         const content = result.choices?.[0]?.message?.content || "";
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error(`No JSON found in AI response: ${content.slice(0, 200)}`);
-        const parsed = JSON.parse(jsonMatch[0]);
-        problemText = parsed.problem_text || "";
-        solutionSteps = parsed.solution_steps || null;
-        finalAnswer = parsed.final_answer || null;
-        studyTime = parsed.estimated_study_time || null;
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) throw new Error(`No JSON array in AI response: ${content.slice(0, 300)}`);
+        aiItems = JSON.parse(jsonMatch[0]);
+        if (!Array.isArray(aiItems) || aiItems.length === 0) throw new Error("AI returned empty items array");
       } else {
         aiError = `AI API ${resp.status}: ${await resp.text()}`;
       }
@@ -110,7 +123,7 @@ serve(async (req) => {
       aiError = String(e);
     }
 
-    if (aiError || !problemText) {
+    if (aiError || aiItems.length === 0) {
       const errMsg = aiError || "AI analysis returned empty result";
       console.error("[upload] AI error:", errMsg);
       await sb.from("ai_error_logs").insert({
@@ -125,18 +138,34 @@ serve(async (req) => {
     // Create problem + review schedule
     const intervals = [1, 2, 4, 7, 15, 30];
     const scheduledDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const summaryText = aiItems.map((it, i) => `【${i + 1}】${it.problem_text}`).join("\n");
+    const totalTime = aiItems.reduce((s, it) => s + (it.estimated_study_time || 0), 0);
 
     const { data: problem, error: pErr } = await sb.from("problems").insert({
       user_id: userId,
       subject_id: subjectId,
       original_image_url: imageUrl,
-      problem_text: problemText,
-      solution_steps: solutionSteps,
-      final_answer: finalAnswer,
-      estimated_study_time: studyTime,
+      problem_text: summaryText,
+      estimated_study_time: totalTime || null,
     }).select().single();
 
     if (pErr) return new Response(JSON.stringify({ error: pErr.message }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+
+    // Insert problem items
+    for (let i = 0; i < aiItems.length; i++) {
+      const it = aiItems[i];
+      await sb.from("problem_items").insert({
+        problem_id: problem.id,
+        user_id: userId,
+        item_number: i + 1,
+        problem_text: it.problem_text,
+        solution_steps: it.solution_steps || null,
+        solution_method: it.solution_method || null,
+        knowledge_points: it.knowledge_points || null,
+        final_answer: it.final_answer || null,
+        estimated_study_time: it.estimated_study_time || null,
+      });
+    }
 
     const { data: review } = await sb.from("review_schedules").insert({
       problem_id: problem.id,
@@ -152,10 +181,9 @@ serve(async (req) => {
       subject_id: subjectId,
       subject_name: subjectName,
       original_image_url: imageUrl,
-      problem_text: problemText,
-      solution_steps: solutionSteps,
-      final_answer: finalAnswer,
-      estimated_study_time: studyTime,
+      problem_text: summaryText,
+      items: aiItems,
+      item_count: aiItems.length,
       review_schedule: review,
       created_at: problem.created_at,
     }), { status: 201, headers: { ...CORS, "Content-Type": "application/json" } });
