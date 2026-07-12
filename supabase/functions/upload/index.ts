@@ -30,21 +30,28 @@ serve(async (req) => {
   console.log("[upload] received request");
 
   try {
+    console.log("[upload] step 1: parsing formData");
     const formData = await req.formData();
+    console.log("[upload] step 2: formData parsed");
     const file = formData.get("file") as File;
     const subjectId = parseInt(formData.get("subject_id") as string, 10);
     const userId = req.headers.get("X-User-Id") || "";
+    console.log("[upload] step 3: file=" + file?.name + " subjectId=" + subjectId + " userId=" + userId);
 
     if (!file || !subjectId || !userId) {
       return new Response(JSON.stringify({ error: "file, subject_id, and X-User-Id required" }), { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
     // Upload to Storage
+    console.log("[upload] step 4: reading file bytes");
     const fileBytes = await file.arrayBuffer();
+    console.log("[upload] step 5: file size=" + fileBytes.byteLength);
     const fileName = `${userId}/${crypto.randomUUID()}.jpg`;
+    console.log("[upload] step 6: uploading to storage");
     const { error: uploadError } = await sb.storage.from("problems")
       .upload(fileName, new Uint8Array(fileBytes), { contentType: "image/jpeg", upsert: true });
     if (uploadError) return new Response(JSON.stringify({ error: `Upload: ${uploadError.message}` }), { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
+    console.log("[upload] step 7: storage upload done");
 
     const imageUrl = sb.storage.from("problems").getPublicUrl(fileName).data.publicUrl;
 
