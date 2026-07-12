@@ -13,20 +13,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(parts.join(""));
 }
 
-function cleanJsonString(s: string): string {
-  s = s.replace(/```json|```/g, "").trim();
-  const validEscapes = new Set(["\\", '"', "/", "b", "f", "n", "r", "t", "u"]);
-  let result = "";
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === "\\" && i + 1 < s.length && !validEscapes.has(s[i + 1])) {
-      result += "\\\\";
-    } else {
-      result += s[i];
-    }
-  }
-  return result;
-}
-
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY") || "";
 const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "";
@@ -38,15 +24,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "Authorization, X-User-Id, Content-Type",
 };
 
-const REST_HEADERS = { "apikey": SERVICE_KEY, "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
-
-async function rest(url: string, body?: unknown): Promise<Response> {
-  return fetch(url, {
-    method: body ? "POST" : "GET",
-    headers: REST_HEADERS,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
+const REST = { "apikey": SERVICE_KEY, "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
+const URL = (path: string) => `${SUPABASE_URL}${path}`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -64,35 +43,65 @@ serve(async (req) => {
 
     const fileBytes = await file.arrayBuffer();
 
-    // Get subject name via REST
-    const subResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/subjects?select=name&id=eq.${subjectId}`,
-      { headers: REST_HEADERS }
-    );
+    // Upload image to storage
+    const ext = file.name.split(".").pop() || "jpg";
+    const fileName = `${userId}/${crypto.randomUUID()}.${ext}`;
+    const uploadResp = await fetch(`${SUPABASE_URL}/storage/v1/object/problems/${fileName}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": file.type || "image/jpeg" },
+      body: new Uint8Array(fileBytes),
+    });
+    const imageUrl = uploadResp.ok
+      ? `${SUPABASE_URL}/storage/v1/object/public/problems/${fileName}`
+      : "";
+
+    // Get subject name
+    const subResp = await fetch(URL(`/rest/v1/subjects?select=name&id=eq.${subjectId}`), { headers: REST });
     const subjects = await subResp.json();
     const subjectName = subjects?.[0]?.name || "unknown";
 
-    if (!NVIDIA_API_KEY) {
-      return new Response(JSON.stringify({ error: "NVIDIA_API_KEY not configured" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+    // Create problem with status=processing
+    const probResp = await fetch(URL("/rest/v1/problems?select=id,created_at"), {
+      method: "POST",
+      headers: REST,
+      body: JSON.stringify({
+        user_id: userId,
+        subject_id: subjectId,
+        original_image_url: imageUrl,
+        problem_text: "",
+        status: "processing",
+      }),
+    });
+    if (!probResp.ok) {
+      const errBody = await probResp.text();
+      return new Response(JSON.stringify({ error: `Problem insert: ${errBody.slice(0, 200)}` }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
     }
+    const [problem] = await probResp.json();
 
-    // AI analysis
-    let aiItems: Array<Record<string, unknown>> = [];
-    let aiError: string | null = null;
+    // Return immediately with problem_id
+    const sendResponse = () => new Response(JSON.stringify({
+      problem_id: problem.id,
+      status: "processing",
+      subject_id: subjectId,
+      subject_name: subjectName,
+    }), { status: 201, headers: { ...CORS, "Content-Type": "application/json" } });
 
-    try {
-      const base64 = bytesToBase64(new Uint8Array(fileBytes));
-      const mimeType = file.type || "image/jpeg";
+    // Background AI processing (fire-and-forget)
+    (async () => {
+      try {
+        if (NVIDIA_API_KEY) {
+          const base64 = bytesToBase64(new Uint8Array(fileBytes));
+          const mimeType = file.type || "image/jpeg";
 
-      const resp = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${NVIDIA_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: NVIDIA_MODEL,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "text", text: `この${subjectName}の宿題の画像を解析してください。画像内の**すべての問題**を漏れなく抽出してください。
+          const aiResp = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${NVIDIA_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: NVIDIA_MODEL,
+              messages: [{
+                role: "user",
+                content: [
+                  { type: "text", text: `この${subjectName}の宿題の画像を解析してください。画像内の**すべての問題**を漏れなく抽出してください。
 
 各問題について以下を日本語で出力：
 - problem_text: 問題文
@@ -105,101 +114,84 @@ serve(async (req) => {
 画像内に問題が複数ある場合は**必ずすべて**含めてください。
 必ずJSON配列のみを返してください。例：
 [{"problem_text":"...","solution_method":"...","solution_steps":"...","knowledge_points":"...","final_answer":"...","estimated_study_time":5}]` },
-              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
-            ],
-          }],
-          temperature: 0.1,
-          max_tokens: 4096,
-        }),
-      });
+                  { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
+                ],
+              }],
+              temperature: 0.1,
+              max_tokens: 4096,
+            }),
+          });
 
-      if (resp.ok) {
-        const result = await resp.json();
-        const content = result.choices?.[0]?.message?.content || "";
-        const jsonMatch = content.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error(`No JSON array: ${content.slice(0, 300)}`);
-        aiItems = JSON.parse(cleanJsonString(jsonMatch[0]));
-        if (!Array.isArray(aiItems) || aiItems.length === 0) throw new Error("AI returned empty items");
-      } else {
-        const errText = await resp.text();
-        aiError = `AI API ${resp.status}: ${errText.slice(0, 200)}`;
+          if (aiResp.ok) {
+            const result = await aiResp.json();
+            const content = result.choices?.[0]?.message?.content || "";
+            const jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              const aiItems = JSON.parse(content.slice(jsonMatch.index, jsonMatch.index + jsonMatch[0].length));
+              if (Array.isArray(aiItems) && aiItems.length > 0) {
+                const summaryText = aiItems.map((it: any, i: number) => `【${i + 1}】${it.problem_text}`).join("\n");
+                const totalTime = aiItems.reduce((s: number, it: any) => s + (it.estimated_study_time || 0), 0);
+
+                // Update problem
+                await fetch(URL(`/rest/v1/problems?id=eq.${problem.id}`), {
+                  method: "PATCH",
+                  headers: REST,
+                  body: JSON.stringify({
+                    problem_text: summaryText,
+                    estimated_study_time: totalTime || null,
+                    status: "completed",
+                  }),
+                });
+
+                // Insert problem items
+                for (let i = 0; i < aiItems.length; i++) {
+                  const it = aiItems[i] as any;
+                  await fetch(URL("/rest/v1/problem_items"), {
+                    method: "POST",
+                    headers: REST,
+                    body: JSON.stringify({
+                      problem_id: problem.id,
+                      user_id: userId,
+                      item_number: i + 1,
+                      problem_text: it.problem_text,
+                      solution_steps: it.solution_steps || null,
+                      solution_method: it.solution_method || null,
+                      knowledge_points: it.knowledge_points || null,
+                      final_answer: it.final_answer || null,
+                      estimated_study_time: it.estimated_study_time || null,
+                    }),
+                  });
+                }
+
+                // Create review schedule
+                const intervals = [1, 2, 4, 7, 15, 30];
+                await fetch(URL("/rest/v1/review_schedules"), {
+                  method: "POST",
+                  headers: REST,
+                  body: JSON.stringify({
+                    problem_id: problem.id,
+                    user_id: userId,
+                    review_stage: 0,
+                    scheduled_date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+                    completed: false,
+                    next_review_interval: intervals[0],
+                  }),
+                });
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[upload] background error:", String(e).slice(0, 500));
+        await fetch(URL(`/rest/v1/problems?id=eq.${problem.id}`), {
+          method: "PATCH",
+          headers: REST,
+          body: JSON.stringify({ status: "error", ai_response_raw: { error: String(e).slice(0, 500) } }),
+        });
       }
-    } catch (e) {
-      aiError = String(e).slice(0, 500);
-    }
+    })();
 
-    if (aiError || aiItems.length === 0) {
-      const errMsg = aiError || "AI analysis returned empty result";
-      return new Response(JSON.stringify({ error: errMsg }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
-    }
-
-    // Save to DB via REST
-    const intervals = [1, 2, 4, 7, 15, 30];
-    const scheduledDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    const summaryText = aiItems.map((it, i) => `【${i + 1}】${it.problem_text}`).join("\n");
-    const totalTime = aiItems.reduce((s, it) => s + ((it as any).estimated_study_time || 0), 0);
-
-    const probResp = await fetch(`${SUPABASE_URL}/rest/v1/problems?select=*`, {
-      method: "POST",
-      headers: REST_HEADERS,
-      body: JSON.stringify({
-        user_id: userId,
-        subject_id: subjectId,
-        original_image_url: "",
-        problem_text: summaryText,
-        estimated_study_time: totalTime || null,
-      }),
-    });
-    if (!probResp.ok) {
-      const errBody = await probResp.text();
-      return new Response(JSON.stringify({ error: `Problem insert: ${errBody.slice(0, 200)}` }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
-    }
-    const [problem] = await probResp.json();
-    if (!problem) return new Response(JSON.stringify({ error: "Problem insert returned no data" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
-
-    for (let i = 0; i < aiItems.length; i++) {
-      const it = aiItems[i] as any;
-      await fetch(`${SUPABASE_URL}/rest/v1/problem_items`, {
-        method: "POST",
-        headers: REST_HEADERS,
-        body: JSON.stringify({
-          problem_id: problem.id,
-          user_id: userId,
-          item_number: i + 1,
-          problem_text: it.problem_text,
-          solution_steps: it.solution_steps || null,
-          solution_method: it.solution_method || null,
-          knowledge_points: it.knowledge_points || null,
-          final_answer: it.final_answer || null,
-          estimated_study_time: it.estimated_study_time || null,
-        }),
-      });
-    }
-
-    const reviewResp = await fetch(`${SUPABASE_URL}/rest/v1/review_schedules?select=*`, {
-      method: "POST",
-      headers: REST_HEADERS,
-      body: JSON.stringify({
-        problem_id: problem.id,
-        user_id: userId,
-        review_stage: 0,
-        scheduled_date: scheduledDate,
-        completed: false,
-        next_review_interval: intervals[0],
-      }),
-    });
-    const [review] = reviewResp.ok ? await reviewResp.json() : [null];
-
-    return new Response(JSON.stringify({
-      problem_id: problem.id,
-      subject_id: subjectId,
-      subject_name: subjectName,
-      problem_text: summaryText,
-      items: aiItems,
-      item_count: aiItems.length,
-      review_schedule: review,
-      created_at: problem.created_at,
-    }), { status: 201, headers: { ...CORS, "Content-Type": "application/json" } });
+    return sendResponse();
 
   } catch (err) {
     console.error(err);

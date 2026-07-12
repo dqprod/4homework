@@ -136,22 +136,32 @@ export async function addManualReview(problemId: string, scheduledDate: string, 
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wamljmirzqviipsomjyu.supabase.co";
 
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { "X-User-Id": getUserId() || "" };
+  const token = getAccessToken();
+  if (token) h["Authorization"] = `Bearer ${token}`;
+  return h;
+}
+
 export async function uploadProblem(file: File, subjectId: number) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("subject_id", String(subjectId));
 
-  // Call Supabase Edge Function directly (Vercel rewrite times out for long AI processing)
-  const headers: Record<string, string> = { "X-User-Id": getUserId() || "" };
-  const token = getAccessToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
   const res = await fetch(`${SUPABASE_URL}/functions/v1/upload`, {
     method: "POST",
-    headers,
+    headers: authHeaders(),
     body: fd,
   });
   if (!res.ok) throw new Error("Upload failed");
+  return res.json();
+}
+
+export async function getProblem(id: string) {
+  const res = await fetch(`/api/problems/${id}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error("Failed to fetch problem");
   return res.json();
 }
 

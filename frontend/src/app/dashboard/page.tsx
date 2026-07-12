@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, Search, Loader2, Trash2, X } from "lucide-react";
 import { getChildViewId, clearAuth } from "@/lib/auth";
@@ -8,6 +8,7 @@ import {
   getProblems,
   getSubjects,
   uploadProblem,
+  getProblem,
   deleteProblem,
 } from "@/lib/api";
 import { SkeletonCard, SkeletonStats } from "@/components/Skeletons";
@@ -31,8 +32,11 @@ export default function DashboardPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState(1);
   const [uploading, setUploading] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [processingSubject, setProcessingSubject] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [viewingChildName, setViewingChildName] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const childViewId = getChildViewId();
   const show = (msg: string) => {
@@ -74,17 +78,43 @@ export default function DashboardPage() {
     setPreviewUrl(null);
   };
 
+  const startPolling = useCallback(async (problemId: string) => {
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+    const poll = async () => {
+      try {
+        const data = await getProblem(problemId);
+        if (data.status === "completed") {
+          if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+          setProcessingId(null);
+          setUploading(false);
+          clearFile();
+          router.push(`/problems/${problemId}`);
+        } else if (data.status === "error") {
+          if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+          setProcessingId(null);
+          setUploading(false);
+          show("AI解析エラー");
+        }
+      } catch {
+        // Ignore poll errors
+      }
+    };
+    await poll();
+    pollingRef.current = setInterval(poll, 10000);
+  }, [router, clearFile, show]);
+
   const handleUpload = async () => {
     if (!selectedFile) return;
     setUploading(true);
     try {
       const result = await uploadProblem(selectedFile, selectedSubject);
-      show("✅ アップロード完了");
-      clearFile();
-      await loadData();
+      setProcessingId(result.problem_id);
+      setProcessingSubject(result.subject_name || "");
+      show("AI解析を開始しました...");
+      const subject = subjects.find(s => s.id === selectedSubject);
+      await startPolling(result.problem_id);
     } catch (err: any) {
       show(err.message || "アップロード失敗");
-    } finally {
       setUploading(false);
     }
   };
@@ -165,6 +195,23 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Upload progress overlay */}
+      {processingId && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full mx-4 text-center space-y-6">
+            <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto" />
+            <div>
+              <h2 className="text-lg font-bold">AI解析中...</h2>
+              <p className="text-sm text-gray-500 mt-1">{processingSubject}</p>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+              <div className="bg-blue-600 h-full rounded-full animate-pulse" style={{ width: "60%" }} />
+            </div>
+            <p className="text-xs text-gray-400">画像を解析して問題を抽出しています</p>
+          </div>
         </div>
       )}
 
