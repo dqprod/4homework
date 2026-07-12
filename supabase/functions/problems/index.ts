@@ -31,16 +31,14 @@ serve(async (req: Request) => {
   const sb = createClient(SB_URL, SB_KEY);
   const url = new URL(req.url);
   
-  // Extract path after /functions/v1/problems
-  const prefix = "/functions/v1/problems";
+  // Supabase gateway strips /functions/v1/ prefix, path starts with /problems
+  const prefix = "/problems";
   let relativePath = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : "";
   relativePath = relativePath.replace(/^\/+|\/+$/g, "").split("?")[0];
   const segments = relativePath.split("/").filter(Boolean);
   
   const userId = req.headers.get("X-User-Id") || "";
   if (!userId) return json({ error: "X-User-Id required" }, 401);
-
-  console.log("[problems]", req.method, url.pathname, "segments:", JSON.stringify(segments), "userId:", userId);
 
   try {
     // GET /problems — list
@@ -132,7 +130,6 @@ serve(async (req: Request) => {
       return json(data, 201);
     }
 
-    console.log("[problems] no match for", req.method, "segments:", JSON.stringify(segments));
     return json({ error: "Not found" }, 404);
 
   } catch (err) {

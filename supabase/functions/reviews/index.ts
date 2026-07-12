@@ -22,7 +22,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const sb = createClient(SB_URL, SB_KEY);
   const url = new URL(req.url);
-  const path = url.pathname.split("/functions/v1/reviews")[1]?.replace(/^\//, "") || "";
+  const path = url.pathname.replace(/^\/reviews\/?/, "");
   const userId = req.headers.get("X-User-Id") || "";
   if (!userId) return json({ error: "Unauthorized" }, 401);
 
