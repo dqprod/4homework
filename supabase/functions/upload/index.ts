@@ -1,6 +1,16 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 8192;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.slice(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY") || "";
 const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "";
@@ -56,7 +66,7 @@ serve(async (req) => {
       const imgSize = fileBytes.byteLength;
       const maxSize = 4 * 1024 * 1024;
       const fileForAI = imgSize > maxSize ? fileBytes.slice(0, maxSize) : fileBytes;
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(fileForAI)));
+      const base64 = bytesToBase64(new Uint8Array(fileForAI));
 
       const resp = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
         method: "POST",
