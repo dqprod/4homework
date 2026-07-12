@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
+console.log("[upload] function loaded");
+
 function bytesToBase64(bytes: Uint8Array): string {
   const chunkSize = 8192;
   let binary = "";
@@ -13,11 +15,18 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 // Clean invalid escape sequences from AI-generated JSON before parsing
 function cleanJsonString(s: string): string {
-  // Remove backticks and code fences
   s = s.replace(/```json|```/g, "").trim();
-  // Fix common AI JSON issues: replace literal \n with \\n in string values
-  s = s.replace(/(?<!\\)\\(?![\\"\/bfnrtu])/g, "\\\\");
-  return s;
+  // Replace invalid JSON escape sequences: \x where x is not a valid escape char
+  const validEscapes = new Set(["\\", '"', "/", "b", "f", "n", "r", "t", "u"]);
+  let result = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && i + 1 < s.length && !validEscapes.has(s[i + 1])) {
+      result += "\\\\";
+    } else {
+      result += s[i];
+    }
+  }
+  return result;
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -28,7 +37,7 @@ const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") || "meta/llama-3.2-90b-vision-
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Id",
+  "Access-Control-Allow-Headers": "Authorization, X-User-Id, Content-Type",
 };
 
 serve(async (req) => {
@@ -74,15 +83,20 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "NVIDIA_API_KEY is not configured" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
+    const controller = new AbortController();
+    const aiTimeout = setTimeout(() => controller.abort(), 55000);
+
     try {
       const imgSize = fileBytes.byteLength;
-      const maxSize = 4 * 1024 * 1024;
+      const maxSize = 512 * 1024;
       const fileForAI = imgSize > maxSize ? fileBytes.slice(0, maxSize) : fileBytes;
       const base64 = bytesToBase64(new Uint8Array(fileForAI));
+      const mimeType = file.type || "image/jpeg";
 
       const resp = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
         method: "POST",
         headers: { "Authorization": `Bearer ${NVIDIA_API_KEY}`, "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           model: NVIDIA_MODEL,
           messages: [{
@@ -110,13 +124,14 @@ serve(async (req) => {
     "estimated_study_time": 5
   }
 ]` },
-              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}`, detail: "high" } },
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
             ],
           }],
           temperature: 0.1,
           max_tokens: 4096,
         }),
       });
+      clearTimeout(aiTimeout);
 
       if (resp.ok) {
         const result = await resp.json();
@@ -126,9 +141,13 @@ serve(async (req) => {
         aiItems = JSON.parse(cleanJsonString(jsonMatch[0]));
         if (!Array.isArray(aiItems) || aiItems.length === 0) throw new Error("AI returned empty items array");
       } else {
-        aiError = `AI API ${resp.status}: ${await resp.text()}`;
+        const errText = await resp.text();
+        console.error("[upload] NVIDIA error:", resp.status, errText.slice(0, 500));
+        aiError = `AI API ${resp.status}: ${errText.slice(0, 200)}`;
       }
     } catch (e) {
+      clearTimeout(aiTimeout);
+      console.error("[upload] AI call exception:", String(e).slice(0, 500));
       aiError = String(e);
     }
 

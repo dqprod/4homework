@@ -134,13 +134,21 @@ export async function addManualReview(problemId: string, scheduledDate: string, 
 
 // ── Upload ────────────────────────────────────────────
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wamljmirzqviipsomjyu.supabase.co";
+
 export async function uploadProblem(file: File, subjectId: number) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("subject_id", String(subjectId));
 
-  const res = await api("/upload", {
+  // Call Supabase Edge Function directly (Vercel rewrite times out for long AI processing)
+  const headers: Record<string, string> = { "X-User-Id": getUserId() || "" };
+  const token = getAccessToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/upload`, {
     method: "POST",
+    headers,
     body: fd,
   });
   if (!res.ok) throw new Error("Upload failed");
