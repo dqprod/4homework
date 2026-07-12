@@ -19,7 +19,7 @@ serve(async (req) => {
 
   const sb = createClient(SB_URL, SB_KEY);
   const url = new URL(req.url);
-  const path = url.pathname.split("/functions/v1/profiles")[1]?.replace(/^\//, "") || "";
+  const path = url.pathname.replace(/^\/profiles\/?/, "");
   const userId = req.headers.get("X-User-Id") || "";
   if (!userId) return json({ error: "Unauthorized" }, 401);
 
