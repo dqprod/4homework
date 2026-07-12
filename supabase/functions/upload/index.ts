@@ -11,6 +11,15 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+// Clean invalid escape sequences from AI-generated JSON before parsing
+function cleanJsonString(s: string): string {
+  // Remove backticks and code fences
+  s = s.replace(/```json|```/g, "").trim();
+  // Fix common AI JSON issues: replace literal \n with \\n in string values
+  s = s.replace(/(?<!\\)\\(?![\\"\/bfnrtu])/g, "\\\\");
+  return s;
+}
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY") || "";
 const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "";
@@ -114,7 +123,7 @@ serve(async (req) => {
         const content = result.choices?.[0]?.message?.content || "";
         const jsonMatch = content.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error(`No JSON array in AI response: ${content.slice(0, 300)}`);
-        aiItems = JSON.parse(jsonMatch[0]);
+        aiItems = JSON.parse(cleanJsonString(jsonMatch[0]));
         if (!Array.isArray(aiItems) || aiItems.length === 0) throw new Error("AI returned empty items array");
       } else {
         aiError = `AI API ${resp.status}: ${await resp.text()}`;
