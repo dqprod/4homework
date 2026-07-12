@@ -40,6 +40,8 @@ serve(async (req: Request) => {
   const userId = req.headers.get("X-User-Id") || "";
   if (!userId) return json({ error: "X-User-Id required" }, 401);
 
+  console.log("[problems]", req.method, url.pathname, "segments:", JSON.stringify(segments), "userId:", userId);
+
   try {
     // GET /problems — list
     if (req.method === "GET" && segments.length === 0) {
@@ -130,6 +132,7 @@ serve(async (req: Request) => {
       return json(data, 201);
     }
 
+    console.log("[problems] no match for", req.method, "segments:", JSON.stringify(segments));
     return json({ error: "Not found" }, 404);
 
   } catch (err) {
