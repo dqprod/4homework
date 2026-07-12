@@ -1,22 +1,20 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 console.log("[upload] function loaded");
 
 function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 8192;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.slice(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += 8192) {
+    const end = Math.min(i + 8192, bytes.length);
+    let s = "";
+    for (let j = i; j < end; j++) s += String.fromCharCode(bytes[j]);
+    parts.push(s);
   }
-  return btoa(binary);
+  return btoa(parts.join(""));
 }
 
-// Clean invalid escape sequences from AI-generated JSON before parsing
 function cleanJsonString(s: string): string {
   s = s.replace(/```json|```/g, "").trim();
-  // Replace invalid JSON escape sequences: \x where x is not a valid escape char
   const validEscapes = new Set(["\\", '"', "/", "b", "f", "n", "r", "t", "u"]);
   let result = "";
   for (let i = 0; i < s.length; i++) {
@@ -30,7 +28,7 @@ function cleanJsonString(s: string): string {
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY") || "";
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY") || "";
 const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") || "";
 const NVIDIA_MODEL = Deno.env.get("NVIDIA_MODEL") || "meta/llama-3.2-90b-vision-instruct";
 
@@ -40,11 +38,20 @@ const CORS = {
   "Access-Control-Allow-Headers": "Authorization, X-User-Id, Content-Type",
 };
 
+const REST_HEADERS = { "apikey": SERVICE_KEY, "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" };
+
+async function rest(url: string, body?: unknown): Promise<Response> {
+  return fetch(url, {
+    method: body ? "POST" : "GET",
+    headers: REST_HEADERS,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...CORS, "Content-Type": "application/json" } });
 
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -55,48 +62,31 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "file, subject_id, and X-User-Id required" }), { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
-    // Upload to Storage
     const fileBytes = await file.arrayBuffer();
-    const fileName = `${userId}/${crypto.randomUUID()}.jpg`;
-    const { error: uploadError } = await sb.storage.from("problems")
-      .upload(fileName, new Uint8Array(fileBytes), { contentType: "image/jpeg", upsert: true });
-    if (uploadError) return new Response(JSON.stringify({ error: `Upload: ${uploadError.message}` }), { status: 400, headers: { ...CORS, "Content-Type": "application/json" } });
 
-    const imageUrl = sb.storage.from("problems").getPublicUrl(fileName).data.publicUrl;
-
-    // Get subject
-    const { data: subject } = await sb.from("subjects").select("name").eq("id", subjectId).single();
-    const subjectName = subject?.name || "unknown";
-
-    // AI parse via NVIDIA Vision API
-    let aiItems: Array<{
-      problem_text: string;
-      solution_method?: string;
-      solution_steps?: string;
-      knowledge_points?: string;
-      final_answer?: string;
-      estimated_study_time?: number;
-    }> = [];
-    let aiError: string | null = null;
+    // Get subject name via REST
+    const subResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/subjects?select=name&id=eq.${subjectId}`,
+      { headers: REST_HEADERS }
+    );
+    const subjects = await subResp.json();
+    const subjectName = subjects?.[0]?.name || "unknown";
 
     if (!NVIDIA_API_KEY) {
-      return new Response(JSON.stringify({ error: "NVIDIA_API_KEY is not configured" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "NVIDIA_API_KEY not configured" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
-    const controller = new AbortController();
-    const aiTimeout = setTimeout(() => controller.abort(), 55000);
+    // AI analysis
+    let aiItems: Array<Record<string, unknown>> = [];
+    let aiError: string | null = null;
 
     try {
-      const imgSize = fileBytes.byteLength;
-      const maxSize = 512 * 1024;
-      const fileForAI = imgSize > maxSize ? fileBytes.slice(0, maxSize) : fileBytes;
-      const base64 = bytesToBase64(new Uint8Array(fileForAI));
+      const base64 = bytesToBase64(new Uint8Array(fileBytes));
       const mimeType = file.type || "image/jpeg";
 
       const resp = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
         method: "POST",
         headers: { "Authorization": `Bearer ${NVIDIA_API_KEY}`, "Content-Type": "application/json" },
-        signal: controller.signal,
         body: JSON.stringify({
           model: NVIDIA_MODEL,
           messages: [{
@@ -114,16 +104,7 @@ serve(async (req) => {
 
 画像内に問題が複数ある場合は**必ずすべて**含めてください。
 必ずJSON配列のみを返してください。例：
-[
-  {
-    "problem_text": "...",
-    "solution_method": "...",
-    "solution_steps": "...",
-    "knowledge_points": "...",
-    "final_answer": "...",
-    "estimated_study_time": 5
-  }
-]` },
+[{"problem_text":"...","solution_method":"...","solution_steps":"...","knowledge_points":"...","final_answer":"...","estimated_study_time":5}]` },
               { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
             ],
           }],
@@ -131,84 +112,88 @@ serve(async (req) => {
           max_tokens: 4096,
         }),
       });
-      clearTimeout(aiTimeout);
 
       if (resp.ok) {
         const result = await resp.json();
         const content = result.choices?.[0]?.message?.content || "";
         const jsonMatch = content.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error(`No JSON array in AI response: ${content.slice(0, 300)}`);
+        if (!jsonMatch) throw new Error(`No JSON array: ${content.slice(0, 300)}`);
         aiItems = JSON.parse(cleanJsonString(jsonMatch[0]));
-        if (!Array.isArray(aiItems) || aiItems.length === 0) throw new Error("AI returned empty items array");
+        if (!Array.isArray(aiItems) || aiItems.length === 0) throw new Error("AI returned empty items");
       } else {
         const errText = await resp.text();
-        console.error("[upload] NVIDIA error:", resp.status, errText.slice(0, 500));
         aiError = `AI API ${resp.status}: ${errText.slice(0, 200)}`;
       }
     } catch (e) {
-      clearTimeout(aiTimeout);
-      console.error("[upload] AI call exception:", String(e).slice(0, 500));
-      aiError = String(e);
+      aiError = String(e).slice(0, 500);
     }
 
     if (aiError || aiItems.length === 0) {
       const errMsg = aiError || "AI analysis returned empty result";
-      console.error("[upload] AI error:", errMsg);
-      await sb.from("ai_error_logs").insert({
-        user_id: userId,
-        image_url: imageUrl,
-        error_message: errMsg,
-      });
-      await sb.storage.from("problems").remove([fileName]);
       return new Response(JSON.stringify({ error: errMsg }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
     }
 
-    // Create problem + review schedule
+    // Save to DB via REST
     const intervals = [1, 2, 4, 7, 15, 30];
     const scheduledDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
     const summaryText = aiItems.map((it, i) => `【${i + 1}】${it.problem_text}`).join("\n");
-    const totalTime = aiItems.reduce((s, it) => s + (it.estimated_study_time || 0), 0);
+    const totalTime = aiItems.reduce((s, it) => s + ((it as any).estimated_study_time || 0), 0);
 
-    const { data: problem, error: pErr } = await sb.from("problems").insert({
-      user_id: userId,
-      subject_id: subjectId,
-      original_image_url: imageUrl,
-      problem_text: summaryText,
-      estimated_study_time: totalTime || null,
-    }).select().single();
-
-    if (pErr) return new Response(JSON.stringify({ error: pErr.message }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
-
-    // Insert problem items
-    for (let i = 0; i < aiItems.length; i++) {
-      const it = aiItems[i];
-      await sb.from("problem_items").insert({
-        problem_id: problem.id,
+    const probResp = await fetch(`${SUPABASE_URL}/rest/v1/problems?select=*`, {
+      method: "POST",
+      headers: REST_HEADERS,
+      body: JSON.stringify({
         user_id: userId,
-        item_number: i + 1,
-        problem_text: it.problem_text,
-        solution_steps: it.solution_steps || null,
-        solution_method: it.solution_method || null,
-        knowledge_points: it.knowledge_points || null,
-        final_answer: it.final_answer || null,
-        estimated_study_time: it.estimated_study_time || null,
+        subject_id: subjectId,
+        original_image_url: "",
+        problem_text: summaryText,
+        estimated_study_time: totalTime || null,
+      }),
+    });
+    if (!probResp.ok) {
+      const errBody = await probResp.text();
+      return new Response(JSON.stringify({ error: `Problem insert: ${errBody.slice(0, 200)}` }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+    }
+    const [problem] = await probResp.json();
+    if (!problem) return new Response(JSON.stringify({ error: "Problem insert returned no data" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+
+    for (let i = 0; i < aiItems.length; i++) {
+      const it = aiItems[i] as any;
+      await fetch(`${SUPABASE_URL}/rest/v1/problem_items`, {
+        method: "POST",
+        headers: REST_HEADERS,
+        body: JSON.stringify({
+          problem_id: problem.id,
+          user_id: userId,
+          item_number: i + 1,
+          problem_text: it.problem_text,
+          solution_steps: it.solution_steps || null,
+          solution_method: it.solution_method || null,
+          knowledge_points: it.knowledge_points || null,
+          final_answer: it.final_answer || null,
+          estimated_study_time: it.estimated_study_time || null,
+        }),
       });
     }
 
-    const { data: review } = await sb.from("review_schedules").insert({
-      problem_id: problem.id,
-      user_id: userId,
-      review_stage: 0,
-      scheduled_date: scheduledDate,
-      completed: false,
-      next_review_interval: intervals[0],
-    }).select().single();
+    const reviewResp = await fetch(`${SUPABASE_URL}/rest/v1/review_schedules?select=*`, {
+      method: "POST",
+      headers: REST_HEADERS,
+      body: JSON.stringify({
+        problem_id: problem.id,
+        user_id: userId,
+        review_stage: 0,
+        scheduled_date: scheduledDate,
+        completed: false,
+        next_review_interval: intervals[0],
+      }),
+    });
+    const [review] = reviewResp.ok ? await reviewResp.json() : [null];
 
     return new Response(JSON.stringify({
       problem_id: problem.id,
       subject_id: subjectId,
       subject_name: subjectName,
-      original_image_url: imageUrl,
       problem_text: summaryText,
       items: aiItems,
       item_count: aiItems.length,
