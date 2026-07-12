@@ -27,6 +27,7 @@ serve(async (req) => {
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { ...CORS, "Content-Type": "application/json" } });
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  console.log("[upload] received request");
 
   try {
     const formData = await req.formData();
@@ -104,6 +105,7 @@ serve(async (req) => {
 
     if (aiError || !problemText) {
       const errMsg = aiError || "AI analysis returned empty result";
+      console.error("[upload] AI error:", errMsg);
       await sb.from("ai_error_logs").insert({
         user_id: userId,
         image_url: imageUrl,
