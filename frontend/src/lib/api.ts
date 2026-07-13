@@ -134,9 +134,7 @@ export async function addManualReview(problemId: string, scheduledDate: string, 
 
 // ── Upload ────────────────────────────────────────────
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wamljmirzqviipsomjyu.supabase.co";
-
-function authHeaders(): Record<string, string> {
+function uploadHeaders(): Record<string, string> {
   const h: Record<string, string> = { "X-User-Id": getUserId() || "" };
   const token = getAccessToken();
   if (token) h["Authorization"] = `Bearer ${token}`;
@@ -148,20 +146,12 @@ export async function uploadProblem(file: File, subjectId: number) {
   fd.append("file", file);
   fd.append("subject_id", String(subjectId));
 
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/upload`, {
+  const res = await fetch("/api/upload", {
     method: "POST",
-    headers: authHeaders(),
+    headers: uploadHeaders(),
     body: fd,
   });
   if (!res.ok) throw new Error("Upload failed");
-  return res.json();
-}
-
-export async function getProblem(id: string) {
-  const res = await fetch(`/api/problems/${id}`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error("Failed to fetch problem");
   return res.json();
 }
 

@@ -55,7 +55,9 @@ serve(async (req: Request) => {
 
       const problemsWithReview = await Promise.all((data || []).map(async (p: any) => {
         const { data: rev } = await sb.from("review_schedules").select("*").eq("problem_id", p.id).order("created_at", { ascending: false }).limit(1).single();
-        return { ...p, subject_name: (p as any).subjects?.name, latest_review: rev || null };
+        // Fetch owner name
+        const { data: ownerProf } = await sb.from("profiles").select("full_name, username").eq("id", p.user_id).single();
+        return { ...p, subject_name: (p as any).subjects?.name, latest_review: rev || null, owner_name: ownerProf?.full_name || ownerProf?.username || null };
       }));
 
       // Include target user's display name for parent view

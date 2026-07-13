@@ -18,6 +18,7 @@ export default function AppNavbar() {
   const router = useRouter();
   const pathname = usePathname();
   const [role, setRole] = useState<string>("student");
+  const [userName, setUserName] = useState<string>("");
   const [children, setChildren] = useState<ChildSummary[]>([]);
   const [childViewId, setChildViewIdLocal] = useState<string | null>(null);
 
@@ -26,7 +27,10 @@ export default function AppNavbar() {
     if (!uid) return;
 
     Promise.allSettled([
-      getProfile().then((p: any) => setRole(p.role || "student")),
+      getProfile().then((p: any) => {
+        setRole(p.role || "student");
+        setUserName(p.full_name || p.username || "");
+      }),
       getParentChildren().then((d: any) => setChildren(d.children || [])),
     ]).catch(() => {});
 
@@ -83,6 +87,9 @@ export default function AppNavbar() {
         )}
 
         <div className="flex items-center gap-0.5 md:gap-1">
+          {userName && (
+            <span className="text-xs text-gray-500 mr-1 hidden sm:inline">👤{userName}</span>
+          )}
           <button onClick={() => router.push("/dashboard")}
             className={`flex items-center gap-1 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm transition-colors ${pathname.startsWith("/dashboard") ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}>
             <LayoutDashboard className="w-3.5 h-3.5" />

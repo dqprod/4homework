@@ -43,27 +43,31 @@ serve(async (req) => {
 
     const fileBytes = await file.arrayBuffer();
 
-    // Upload image to storage
+    // Upload image to storage (need BOTH apikey AND Authorization for storage API)
     const ext = file.name.split(".").pop() || "jpg";
     const fileName = `${userId}/${crypto.randomUUID()}.${ext}`;
+    console.log(`[upload] STORAGE_KEY_LEN=${(SERVICE_KEY||"").length} URL=${!!SUPABASE_URL}`);
     const uploadResp = await fetch(`${SUPABASE_URL}/storage/v1/object/problems/${fileName}`, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": file.type || "image/jpeg" },
+      headers: { "apikey": SERVICE_KEY, "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": file.type || "image/jpeg" },
       body: new Uint8Array(fileBytes),
     });
-    const imageUrl = uploadResp.ok
-      ? `${SUPABASE_URL}/storage/v1/object/public/problems/${fileName}`
-      : "";
+    if (!uploadResp.ok) {
+      const errText = await uploadResp.text();
+      console.error(`[upload] Storage error: ${uploadResp.status} ${errText.slice(0,500)}`);
+      return new Response(JSON.stringify({ error: `Storage failed: ${uploadResp.status}` }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+    }
+    const imageUrl = `${SUPABASE_URL}/storage/v1/object/public/problems/${fileName}`;
 
     // Get subject name
     const subResp = await fetch(URL(`/rest/v1/subjects?select=name&id=eq.${subjectId}`), { headers: REST });
     const subjects = await subResp.json();
     const subjectName = subjects?.[0]?.name || "unknown";
 
-    // Create problem with status=processing
-    const probResp = await fetch(URL("/rest/v1/problems?select=id,created_at"), {
+    // Create problem with status=processing (need Prefer header for return body)
+    const probResp = await fetch(URL("/rest/v1/problems"), {
       method: "POST",
-      headers: REST,
+      headers: { ...REST, "Prefer": "return=representation" },
       body: JSON.stringify({
         user_id: userId,
         subject_id: subjectId,
@@ -76,7 +80,11 @@ serve(async (req) => {
       const errBody = await probResp.text();
       return new Response(JSON.stringify({ error: `Problem insert: ${errBody.slice(0, 200)}` }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
     }
-    const [problem] = await probResp.json();
+    const probData = await probResp.json();
+    const problem = Array.isArray(probData) && probData.length > 0 ? probData[0] : null;
+    if (!problem) {
+      return new Response(JSON.stringify({ error: "Problem created but no data returned" }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+    }
 
     // Return immediately with problem_id
     const sendResponse = () => new Response(JSON.stringify({

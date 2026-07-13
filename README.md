@@ -142,3 +142,13 @@ open http://127.0.0.1:8000/docs
 3. **画面**：上传组件 (B2) → 学习记录列表 (B3) → 日历视图 (B4a) → 复习列表 (B4b) → 题目详情 (B5) → 家长仪表盘 (C2)
 4. **异步任务**：AI 调用入 BackgroundTasks / Celery，前端轮询结果
 5. **通知**：Email / 应用内复习提醒
+
+
+
+
+
+
+
+备注
+
+git add supabase/functions/upload/index.ts && git commit -m "fix: chunked base64 encoding to prevent stack overflow" && git push && supabase functions deploy upload 2>&1

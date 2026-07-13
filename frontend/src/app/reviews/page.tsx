@@ -11,6 +11,7 @@ interface Review {
   review_stage: number; scheduled_date: string; completed: boolean;
   completed_at: string | null; next_review_interval: number | null;
   created_at: string; updated_at: string | null;
+  problems?: { problem_text: string; subject_name: string; };
 }
 
 interface Problem { id: string; problem_text: string; subject_name: string; }
@@ -157,7 +158,9 @@ export default function ReviewsPage() {
                   <span className="text-[10px] text-gray-400">{r.scheduled_date}</span>
                   {r.next_review_interval && <span className="text-[10px] text-gray-400">+{r.next_review_interval}日</span>}
                 </div>
-                <p className="text-xs text-gray-700 line-clamp-1">復習タスク #{r.id.slice(0, 8)}</p>
+                <p className="text-xs text-gray-700 line-clamp-1">
+                  {r.problems?.problem_text ? `${r.problems.problem_text.slice(0, 50)}...` : `復習タスク #{r.id.slice(0, 8)}`}
+                </p>
               </div>
               <button onClick={() => toggleReview(r.id, r.completed)}
                 className={`px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-colors ${r.completed ? "bg-gray-100 text-gray-500 hover:bg-gray-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}>

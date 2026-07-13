@@ -27,7 +27,7 @@ serve(async (req) => {
   if (!userId) return json({ error: "Unauthorized" }, 401);
 
   try {
-    // GET /reviews — list
+    // GET /reviews — list (with problem association)
     if (req.method === "GET" && !path) {
       const page = parseInt(url.searchParams.get("page") || "1");
       const limit = parseInt(url.searchParams.get("limit") || "20");
@@ -37,7 +37,7 @@ serve(async (req) => {
       const rangeEnd = url.searchParams.get("range_end");
       const completed = url.searchParams.get("completed");
 
-      let query = sb.from("review_schedules").select("*", { count: "exact" }).eq("user_id", targetUserId).order("scheduled_date");
+      let query = sb.from("review_schedules").select("*,problems(problem_text,subjects(name))", { count: "exact" }).eq("user_id", targetUserId).order("scheduled_date");
       if (scheduledDate) query = query.eq("scheduled_date", scheduledDate);
       if (rangeStart) query = query.gte("scheduled_date", rangeStart);
       if (rangeEnd) query = query.lte("scheduled_date", rangeEnd);

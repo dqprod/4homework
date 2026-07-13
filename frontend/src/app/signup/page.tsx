@@ -67,34 +67,34 @@ export default function SignupPage() {
               <UserPlus className="w-8 h-8 text-green-600" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Create Account</h1>
-          <p className="text-gray-500 text-sm">Join 4homework to start learning</p>
+          <h1 className="text-2xl font-bold text-gray-900">アカウント作成</h1>
+          <p className="text-gray-500 text-sm">4homeworkにはじめる勉強サポート</p>
         </div>
 
         <form onSubmit={handleSignup} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-700 ml-1">Full Name</label>
+              <label className="text-xs font-medium text-gray-700 ml-1">名前</label>
               <input 
                 required 
                 value={formData.full_name} 
                 onChange={e => setFormData({...formData, full_name: e.target.value})}
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                placeholder="Name"
+                placeholder="山田 太郎"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-700 ml-1">Username</label>
+              <label className="text-xs font-medium text-gray-700 ml-1">ユーザー名</label>
               <input 
                 value={formData.username} 
                 onChange={e => setFormData({...formData, username: e.target.value})}
                 className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                placeholder="Unique ID"
+                placeholder="unique_id"
               />
             </div>
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-700 ml-1">Email</label>
+            <label className="text-xs font-medium text-gray-700 ml-1">メールアドレス</label>
             <input 
               type="email" 
               required 
@@ -105,7 +105,7 @@ export default function SignupPage() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-700 ml-1">Password</label>
+            <label className="text-xs font-medium text-gray-700 ml-1">パスワード</label>
             <input 
               type="password" 
               required 
@@ -116,14 +116,14 @@ export default function SignupPage() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-700 ml-1">Your Role</label>
+            <label className="text-xs font-medium text-gray-700 ml-1">役割</label>
             <select 
               value={formData.role} 
               onChange={e => setFormData({...formData, role: e.target.value})}
               className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all bg-white"
             >
-              <option value="student">Student (学習者)</option>
-              <option value="parent">Parent (保護者)</option>
+              <option value="student">学習者</option>
+              <option value="parent">保護者</option>
             </select>
           </div>
           {error && <p className="text-red-500 text-xs text-center">{error}</p>}
@@ -132,14 +132,14 @@ export default function SignupPage() {
             disabled={loading}
             className="w-full bg-green-600 text-white py-2.5 rounded-xl font-medium hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Register Account"}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "アカウントを作成"}
           </button>
         </form>
 
         <div className="text-center">
           <p className="text-sm text-gray-500">
-            Already have an account?{" "}
-            <a href="/login" className="text-green-600 font-medium hover:underline">Sign in</a>
+            すでにアカウントをお持ちですか？{" "}
+            <a href="/login" className="text-green-600 font-medium hover:underline">ログイン</a>
           </p>
         </div>
       </div>

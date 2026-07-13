@@ -8,7 +8,7 @@ import {
   getProblems,
   getSubjects,
   uploadProblem,
-  getProblem,
+  getProblemById,
   deleteProblem,
 } from "@/lib/api";
 import { SkeletonCard, SkeletonStats } from "@/components/Skeletons";
@@ -19,6 +19,7 @@ interface Problem {
   original_image_url: string; problem_text: string; solution_steps: string | null;
   final_answer: string | null; estimated_study_time: number | null;
   memo: string | null; created_at: string; latest_review: any | null;
+  owner_name?: string | null;
 }
 
 export default function DashboardPage() {
@@ -82,7 +83,7 @@ export default function DashboardPage() {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
     const poll = async () => {
       try {
-        const data = await getProblem(problemId);
+        const data = await getProblemById(problemId);
         if (data.status === "completed") {
           if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
           setProcessingId(null);
@@ -277,6 +278,7 @@ export default function DashboardPage() {
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0" onClick={() => router.push(`/problems/${p.id}`)}>
                 <div className="text-[10px] md:text-xs text-gray-400 mb-1">
+                  {p.owner_name && <span className="font-semibold text-blue-600 mr-1">👤{p.owner_name}</span>}
                   {p.subject_name} · {p.created_at?.slice(0, 10)} · ⏱{p.estimated_study_time || "?"}分
                 </div>
                 <p className="text-xs md:text-sm text-gray-800 line-clamp-2">{p.problem_text}</p>

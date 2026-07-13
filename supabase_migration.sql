@@ -90,6 +90,21 @@ create table if not exists public.manual_reviews (
     created_at timestamptz not null default now()
 );
 
+-- Problem items (individual problems within an image upload)
+create table if not exists public.problem_items (
+    id uuid primary key default gen_random_uuid(),
+    problem_id uuid not null references public.problems(id) on delete cascade,
+    user_id uuid not null references public.profiles(id) on delete cascade,
+    item_number int not null,
+    problem_text text not null,
+    solution_method text,
+    solution_steps text,
+    knowledge_points text,
+    final_answer text,
+    estimated_study_time int,
+    created_at timestamptz not null default now()
+);
+
 -- AI error logs
 create table if not exists public.ai_error_logs (
     id serial primary key,
@@ -112,6 +127,7 @@ create index if not exists ix_review_schedules_user_scheduled on public.review_s
 create index if not exists ix_manual_reviews_user_id on public.manual_reviews(user_id);
 create index if not exists ix_manual_reviews_scheduled_date on public.manual_reviews(scheduled_date);
 create index if not exists ix_manual_reviews_problem_id on public.manual_reviews(problem_id);
+create index if not exists ix_problem_items_problem_id on public.problem_items(problem_id);
 
 -- RLS policies
 alter table public.profiles enable row level security;
@@ -120,6 +136,7 @@ alter table public.review_schedules enable row level security;
 alter table public.review_records enable row level security;
 alter table public.parent_child enable row level security;
 alter table public.manual_reviews enable row level security;
+alter table public.problem_items enable row level security;
 alter table public.ai_error_logs enable row level security;
 
 -- Allow users to read own data
@@ -146,6 +163,12 @@ create policy "Parent can manage own links" on public.parent_child for all using
 create policy "Owner can manage manual reviews" on public.manual_reviews for all using (auth.uid() = user_id);
 create policy "Parent can read child manual reviews" on public.manual_reviews for select using (
     exists (select 1 from public.parent_child where parent_id = auth.uid() and child_id = user_id)
+);
+
+-- Problem items: owner + parents
+create policy "Owner can manage problem items" on public.problem_items for all using (auth.uid() = user_id);
+create policy "Parent can read child problem items" on public.problem_items for select using (
+    auth.uid() in (select parent_id from public.parent_child where child_id = user_id)
 );
 
 -- Subjects: public read

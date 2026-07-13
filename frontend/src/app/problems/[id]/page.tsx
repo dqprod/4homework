@@ -211,14 +211,14 @@ export default function ProblemDetailPage() {
 
                   {item.solution_steps && (
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-gray-400">解题思路</label>
+                      <label className="text-xs font-semibold text-gray-400">解き方</label>
                       <div className="bg-blue-50 p-3 rounded-xl text-sm text-gray-700 whitespace-pre-wrap">{item.solution_steps}</div>
                     </div>
                   )}
 
                   {item.solution_method && (
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-gray-400">解き方・考え方</label>
+                      <label className="text-xs font-semibold text-gray-400">考え方</label>
                       <div className="bg-green-50 p-3 rounded-xl text-sm text-gray-700 whitespace-pre-wrap">{item.solution_method}</div>
                     </div>
                   )}

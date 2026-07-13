@@ -125,7 +125,7 @@ export default function ParentPage() {
                 <div className="space-y-1">
                   <div className="flex justify-between text-[10px] text-gray-400">
                     <span>復習進捗</span>
-                    <span>{c.completed_reviews} / {c.total_problems}</span>
+                    <span>{c.completed_reviews} / {c.completed_reviews + c.due_reviews}</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2">
                     <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${Math.min(100, c.completion_rate * 100)}%` }} />
